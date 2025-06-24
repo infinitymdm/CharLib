@@ -36,7 +36,7 @@ These keys may optionally be included to specify simulation parameters:
     * `high_to_low`: The threshold which must be crossed before a particular signal can be considered falling from one to zero. Defaults to 0.5 (50% of supply voltage).
     * `low_to_high`: The threshold which must be crossed before a particular signal can be considered rising from zero to one. Defaults to 0.5 (50% of supply voltage).
 * `process`: The process condition to include in the exported liberty file. Defaults t0 1.
-* `temperature`: The temperature to use during spice simulations. Defaults to 25C. 
+* `temperature`: The temperature to use during spice simulations. Defaults to 25C.
 * `operating_conditions`: The operating conditions to include in the exported liberty file. Empty by default.
 * `cell_defaults`: A dictionary of default values to use for all cells. See **Cells** below for more information. May contain any key-value pair valid for a cell entry.
 
@@ -77,8 +77,8 @@ Sequential Cell entries must specify the following key-value pairs in addition t
 
 * `clock`: The clock pin name and edge direction, e.g. 'posedge CLK'.
 * `flops`: A sequence of storage element names.
-* `setup_time_range`: 
-* `hold_time_range`: 
+* `setup_time_range`:
+* `hold_time_range`:
 
 ### Optional Keys
 These keys may optionally be included to provide additional cell documentation or improve CharLib performance.
@@ -86,10 +86,10 @@ These keys may optionally be included to provide additional cell documentation o
 * `area`: The physical area occupied by the cell layout. Defaults to 0 if omitted.
 * `set`: For sequential cells only. The set pin name and edge direction, e.g. 'negedge S'. If omitted, CharLib assumes the cell does not have a set pin.
 * `reset`: For sequential cells only. The reset pin name and edge direction, e.g. 'negedge R'. If omitted, CharLib assumes the cell does not have a reset pin.
-* `clock_slew`: For sequential cells only. The slew rate to use for the clock signal in simulation. Defaults to 0 if omitted.
-* `plots`: A string (or list of strings) specifying which plots to show for this cell. May be set to 'all', 'none', or a subset of 'io', 'delay', and 'energy'. Defaults to 'none'.
+* `clock_slews`: For sequential cells only. A list of slew rates to use for the clock signals in simulation. Defaults to `slews` if omitted.
+* `plots`: A string (or list of strings) specifying which plots to show for this cell. Valid values are 'all', 'none', or any subset of 'io', 'delay', and 'energy'. Defaults to 'none'.
 
-## Examples 
+## Examples
 
 ### Example 1: OSU350 INVX1 Characterization
 The YAML below configures CharLib to perform timing and power characterization for a single-input single-output inverter cell.
@@ -162,7 +162,7 @@ settings:
         models: [test/osu350/model.sp]
         slews: [0.015, 0.04, 0.08, 0.2, 0.4]
         loads: [0.06, 0.18, 0.42, 0.6, 1.2]
-    
+
 cells:
     FAX1:
         netlist:    osu350_spice_temp/FAX1.sp
@@ -254,7 +254,7 @@ settings:
             name:       VNW
             voltage:    3.3
     cell_defaults:
-        models:  
+        models:
             - gf180_temp/models/sm141064.ngspice typical # This syntax tells CharLib to use the '.lib file section' syntax for this model
             - gf180_temp/models/design.ngspice
         slews:  [0.015, 0.08, 0.4]
