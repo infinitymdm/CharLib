@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "charlib"
-version = "1.0.1"
+version = "1.1.0"
 description = "An open-source standard cell library characterizer"
 repository = "https://github.com/stineje/CharLib"
 authors = [
@@ -13,11 +13,11 @@ packages = [{include = "charlib"}]
 
 [tool.poetry.dependencies]
 python = ">=3.11"
-pyspice = {git = "https://github.com/infinitymdm/PySpice.git"}
+pyspice = {git = "https://github.com/infinitymdm/PySpice.git"} # PyPI doesn't allow git installs for security reasons. Comment this out for published releases.
 liberty-parser = ">=0.0.23"
 pyyaml = ">=6.0.1"
 numpy = ">=2.0.0"
-matplotlib = "^3.8.2"
+matplotlib = ">=3.8.2"
 
 [tool.poetry.scripts]
 charlib = "charlib.characterizer.run:main"

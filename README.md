@@ -10,16 +10,37 @@
 CharLib is an open-source standard cell library characterizer. The current version supports timing characterization of combinational and sequential cells.
 
 ## Installation
-CharLib can be installed from [PyPI](https://pypi.org/project/charlib) using pip:
+The easiest way to install CharLib is to use pip:
+
+```
+pip install git+https://github.com/stineje/CharLib
+```
+
+You can also install published releases from [PyPI](https://pypi.org/project/charlib), but the process is a little bit more complicated.
+
+<details>
+
+<summary>Install from PyPI</summary>
 
 ```
 # Install our customized version of PySpice
 pip install git+https://github.com/infinitymdm/PySpice
 
-# Install CharLib
+# Install the latest CharLib release from PyPI
 pip install charlib
 ```
-Make sure you also have a compatible circuit simulator. [ngspice](https://ngspice.sourceforge.io/) and [xyce](https://xyce.sandia.gov/) are currently supported.
+
+### Why does PySpice have to be installed separately first?
+PyPI doesn't allow the use of git repositories as direct dependencies for security reasons. Since CharLib relies on customizations we've made to PySpice, our options are:
+1. Get our changes integrated into upstream PySpice
+2. Publish our own releases of PySpice under a different name
+3. Work around PyPI by installing our custom PySpice separately
+
+We've [submitted several Pull Requests to PySpice](https://github.com/PySpice-org/PySpice/pulls/infinitymdm), but so far the authors have taken no action on those. Publishing our own PySpice releases would be a lot of work for a temporary solution, as we have no intention of maintaining a completely independent fork. Working around PyPI's limitations seems to make the most sense here.
+
+</details>
+
+However you install CharLib, make sure you also have a compatible circuit simulator. [ngspice](https://ngspice.sourceforge.io/) and [xyce](https://xyce.sandia.gov/) are currently supported. Most open source PDKs are built for ngspice, so that's probably what you'll want to use.
 
 ## Usage
 `charlib run path/to/library/config/`
@@ -37,7 +58,7 @@ Running `charlib --help` will display lots of useful information.
 We're glad you're interested in contributing to CharLib! See [CONTRIBUTING.md](https://github.com/stineje/CharLib/blob/main/CONTRIBUTING.md) for details on how to get involved.
 
 ## Troubleshooting
-If you're having problems using CharLib, please [open a new issue](https://github.com/stineje/CharLib/issues/new/choose)
+If you're having problems using CharLib, please [open a new issue](https://github.com/stineje/CharLib/issues/new/choose).
 
 ## Citing
 If you use this work in your research, please cite as follows:
