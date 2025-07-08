@@ -543,7 +543,7 @@ class SequentialTestManager(TestManager):
         self.clock = clock
         self.flops = flops
 
-        self._clock_slew = kwargs.get('clock_slew', 0)
+        self._clock_slews = kwargs.get('clock_slews', self.in_slews)
 
         # Setup and Hold time search parameters
         self.setup_time_range = kwargs.get('setup_time_range', [0.1, 1])
@@ -572,11 +572,9 @@ class SequentialTestManager(TestManager):
         self.cell.add_pin(pin.name, pin.direction, pin.role)
 
     @property
-    def clock_slew(self) -> float:
-        """Return clock slew rate"""
-        if self.in_slews and not self._clock_slew:
-            return min(self.in_slews)
-        return float(self._clock_slew)
+    def clock_slews(self) -> list:
+        """Return list of clock slew rates"""
+        return self._clock_slews
 
     @property
     def set(self):
@@ -747,24 +745,25 @@ class SequentialTestManager(TestManager):
 
         return self.cell
 
-    def _run_delay(self, settings, harness: SequentialHarness, slew, load, trial_name):
+    def _run_delay(self, settings, harness: SequentialHarness, slew, load, clk_slew, trial_name):
         """Run a single sequential delay trial"""
         # Set up slew and load parameters
         t_slew = slew * settings.units.time
         c_load = load * settings.units.capacitance
+        t_clk_slew = clk_slew * settings.units.time
         debug_path = settings.debug_dir / self.cell.name / 'delay' / harness.debug_path / \
-                     f'slew_{slew}' / f'load_{load}'
+                     f'slew_{slew}' / f'load_{load}' / f'clk_slew_{clk_slew}
 
         if not settings.quiet:
-            print(f'Running sequential {trial_name} with slew={str(t_slew)}, load={str(c_load)}')
-        t_stab = self._find_stabilizing_time(settings, harness, t_slew, c_load, debug_path)
-        (t_setup, t_hold) = self._find_setup_hold_delay(settings, harness, t_slew, c_load, t_stab, debug_path)
+            print(f'Running sequential {trial_name} with slew={str(t_slew)}, load={str(c_load), clk_slew={str(clk_slew)}}')
+        t_stab = self._find_stabilizing_time(settings, harness, t_slew, c_load, t_clk_slew, debug_path)
+        (t_setup, t_hold) = self._find_setup_hold_delay(settings, harness, t_slew, c_load, t_clk_slew, t_stab, debug_path)
 
         # Characterize using identified setup and hold time
-        simulation, timings = self._build_test_circuit('delay', settings, harness, t_slew, c_load, t_setup, t_hold, t_stab)
+        simulation, timings = self._build_test_circuit('delay', settings, harness, t_slew, c_load, t_clk_slew, t_setup, t_hold, t_stab)
         return self._measure_cell_delays(settings, harness, simulation, timings, debug_path)
 
-    def _find_stabilizing_time(self, settings, harness, t_slew, c_load, debug_path):
+    def _find_stabilizing_time(self, settings, harness, t_slew, c_load, t_clk_slew, debug_path):
         """Find a reasonable stablilizing time for the current configuration.
 
         The stabilizing time is the delay between the first half of the procedure, where we zero
@@ -865,25 +864,24 @@ class SequentialTestManager(TestManager):
             th = (th_max + th_min) / 2
         return th_max
 
-    def _build_test_circuit(self, title, settings, harness, t_slew, c_load, t_setup, t_hold, t_stabilizing):
+    def _build_test_circuit(self, title, settings, harness, t_slew, c_load, t_setup, t_hold, t_stabilizing, t_clk_slew):
         """Construct the circuit simulation object with the provided test parameters"""
         # Set up parameters
-        clk_slew = self.clock_slew * settings.units.time
         vdd = settings.vdd.voltage * settings.units.voltage
         vss = settings.vss.voltage * settings.units.voltage
 
         # Set up timing parameters for clock and data events
         t = {}
         t['clk_edge_1_start'] = t_setup
-        t['clk_edge_1_end'] = t['clk_edge_1_start'] + clk_slew
+        t['clk_edge_1_end'] = t['clk_edge_1_start'] + t_clk_slew
         t['clk_edge_2_start'] = t['clk_edge_1_end'] + max(t_setup, t_hold)
-        t['clk_edge_2_end'] = t['clk_edge_2_start'] + clk_slew
+        t['clk_edge_2_end'] = t['clk_edge_2_start'] + t_clk_slew
         t['removal'] = t['clk_edge_2_end'] + t_hold # initial state has now been zeroed out
         t['data_edge_1_start'] = t['removal'] + t_stabilizing # wait for the system to stabilize
         t['data_edge_1_end'] = t['data_edge_1_start'] + t_slew
-        t['clk_edge_3_start'] = t['data_edge_1_start'] + t_slew/2 + t_setup + clk_slew/2
-        t['clk_edge_3_end'] = t['clk_edge_3_start'] + clk_slew
-        t['data_edge_2_start'] = t['clk_edge_3_start'] + clk_slew/2 + t_hold + t_slew/2
+        t['clk_edge_3_start'] = t['data_edge_1_start'] + t_slew/2 + t_setup + t_clk_slew/2
+        t['clk_edge_3_end'] = t['clk_edge_3_start'] + t_clk_slew
+        t['data_edge_2_start'] = t['clk_edge_3_start'] + t_clk_slew/2 + t_hold + t_slew/2
         t['data_edge_2_end'] = t['data_edge_2_start'] + t_slew
         t['sim_end'] = t['data_edge_2_end'] + 2*t_stabilizing # wait for the system to stabilize
 
