@@ -15,7 +15,7 @@ curl https://raw.githubusercontent.com/fossi-foundation/globalfoundries-pdk-libs
 
 # 9-track
 cd gf180mcu_osu_sc_gp9t3v3
-charlib run .
+charlib run . -f inv
 
 # TODO: 12-track
 
