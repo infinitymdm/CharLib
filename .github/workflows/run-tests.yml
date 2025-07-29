@@ -22,7 +22,7 @@ jobs:
         run: |
           pytest
 
-  Characterize-GF180-inv:
+  characterize_gf180mcu_osu_sc:
     runs-on: ubuntu-latest
 
     steps:
@@ -39,16 +39,12 @@ jobs:
         run: |
           pip install -e .[docs]
 
-      - name: "Download gf180mcu_osu cell SPICE models"
+      - name: "Characterize"
         run: |
-          ./test/pdks/gf180/fetch_spice.sh
+          ./test/pdks/gf180mcu_osu_sc/test_gf180mcu_osu_sc.sh
 
-      - name: "Characterize (using test/pdks/gf180.yml)"
-        run: |
-          charlib run test/pdks/gf180 -f inv
-
-      - name: "Record characterization results"
+      - name: "Upload results"
         uses: actions/upload-artifact@v4
         with:
           name: characterization-results
-          path: results/GF180.lib
+          path: test/pdks/gf180mcu_osu_sc/gf180mcu_osu_sc_temp/gf180mcu_osu_sc_gp9t3v3/lib/gf180mcu_osu_sc_gp9t3v3_tt_25c.nldm.lib
