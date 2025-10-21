@@ -43,6 +43,7 @@ class Characterizer:
 
         cell = Cell(name, netlist, functions, special_pins=special_pins,
                     state_paths=properties.pop('state', []),
+                    diff_pairs=properties.pop('pairs', []),
                     input_pins=properties.pop('inputs', []),
                     output_pins=properties.pop('outputs', []), area=properties.pop('area', 0.0))
         models = properties.pop('models')
@@ -63,6 +64,7 @@ class Characterizer:
             # TODO: Find recovery & removal constraints (clk/en-to-set, clk/en-to-reset)
             # TODO: Measure preset & clear delays (set-to-q, reset-to-q)
             # TODO: Measure sequential propagation and transient delays (d-to-q, en-to-q)
+            pass
         else:
             # Measure combinational propagation and transient delays
             simulations += self.settings.simulation.combinational_delay(cell, config, self.settings)
