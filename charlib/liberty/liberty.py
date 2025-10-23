@@ -34,7 +34,7 @@ class Group(Statement):
         """
         self.name = group_name
         self.identifier = group_id # TODO: Validate
-        self.groups = dict()
+        self.groups = dict() # TODO: Change to list or similar. We need to allow multiple groups with the same name
         self.attributes = dict()
 
     def __hash__(self):

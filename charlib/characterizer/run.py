@@ -80,17 +80,14 @@ def run_charlib(args):
         print(f'Searching for YAML files in {str(library_dir)}')
 
     config = None
-
     if Path(library_dir).is_file():
         filelist=[library_dir]
     else:
         filelist=list(Path(library_dir).rglob('*.yml')) + list(Path(library_dir).rglob('*.yaml'))
-
     for file in filelist:
         try:
             with open(file, 'r') as f:
                 config = yaml.safe_load(f)
-                f.close()
         except yaml.YAMLError as e:
             if not args.quiet:
                 print(e)
@@ -98,10 +95,9 @@ def run_charlib(args):
             continue
         if config.keys() >= {'settings', 'cells'}:
             break # We have found a YAML file with config information
-
     if not config:
-        raise FileNotFoundError(f'Unable to locate a YAML file containing configuration settings in {library_dir} or its subdirectories.')
-
+        raise FileNotFoundError(f'Unable to locate a YAML file containing configuration settings' \
+                                f'in {library_dir} or its subdirectories.')
     if not args.quiet:
         print(f'Reading configuration found in "{str(file)}"')
 
@@ -172,6 +168,7 @@ def run_charlib(args):
 
 def compare(benchmark, characterized): # FIXME: no longer works with recent rework
     """Compare prop delay and trans delay for each cell and make scatter plots"""
+    # TODO: Rework to compare all data points rather than averages
     charlib_rise_prop_data = []
     benchmark_rise_prop_data = []
     charlib_fall_prop_data = []
