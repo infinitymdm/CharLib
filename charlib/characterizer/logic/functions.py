@@ -109,7 +109,7 @@ class StateFunction(Function):
         :param preset:
         :param clear:
         """
-        self.base_expression = str(expression)
+        self.state_name = state_name
 
         # Add each state-related input cumulatively, if present
         if clock:
@@ -130,7 +130,7 @@ class StateFunction(Function):
 
     def __str__(self) -> str:
         """Return str(self)"""
-        return self.base_expression.replace('~', '!')
+        return self.state_name
 
 
 def generate_yml():

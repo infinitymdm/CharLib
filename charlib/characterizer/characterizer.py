@@ -15,6 +15,7 @@ from charlib.liberty.library import Library
 import charlib.characterizer.procedures.pin_capacitance
 import charlib.characterizer.procedures.combinational_delay
 import charlib.characterizer.procedures.metastability_delay
+import charlib.characterizer.procedures.sequential_delay
 
 class Characterizer:
     """Main object of Charlib. Keeps track of settings and cells, and schedules simulations."""
@@ -59,11 +60,13 @@ class Characterizer:
 
         # Identify which delay sims to run based on cell type
         if cell.is_sequential:
-            # TODO: Find setup & hold constraints (clock-to-q, en-to-q)
+            # TODO: Find setup & hold constraints (d-to-clk, d-to-en)
             # TODO: Find minimum pulse width constraints (set, reset, enable, clock)
             # TODO: Find recovery & removal constraints (clk/en-to-set, clk/en-to-reset)
             # TODO: Measure preset & clear delays (set-to-q, reset-to-q)
-            # TODO: Measure sequential propagation and transient delays (d-to-q, en-to-q)
+
+            # Measure sequential propagation and transient delays (clk-to-q, en-to-q)
+            simulations += self.settings.simulation.sequential_delay(cell, config, self.settings)
             pass
         else:
             # Measure combinational propagation and transient delays
@@ -177,9 +180,11 @@ class SimulationSettings:
     def __init__(self, **kwargs):
         self.backend = kwargs.get('backend', 'ngspice-shared')
         self.input_capacitance = registered_procedures[kwargs.get('input_capacitance_procedure', 'ac_sweep')]
-        self.combinational_delay = registered_procedures[kwargs.get('combinational_delay_procedure', 'combinational_worst_case')]
-        self.metastability_delay = registered_procedures[kwargs.get('metastability_delay_procedure', 'metastability_binary_search_worst_case')]
-        # self.dff_delay = registered_procedures[kwargs.get('dff_delay', 'dff_worst_case')]
+        self.combinational_delay = registered_procedures[kwargs.get('combinational_delay_procedure', 'combinational_average')]
+        self.sequential_delay = registered_procedures[kwargs.get('sequential_delay_procedure', 'sequential_average')]
+        # self.min_pulse_width_constraint = registered_procedures[kwargs.get('min_pulse_width_procedure', 'min_pulse_width_worst_case')]
+        # self.recovery_removal_constraint = registered_procedures[kwargs.get('recovery_removal_procedure', 'recovery_removal_worst_case')]
+        # self.metastability_constraints = registered_procedures[kwargs.get('metastability_procedure', 'metastability_binary_search')]
 
 class LogicThresholds:
     """Container for logic_thresholds settings"""

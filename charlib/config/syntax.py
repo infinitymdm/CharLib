@@ -138,7 +138,7 @@ class ConfigFile:
                             'clock pin in order to use this parameter. Unit is specified by ' \
                             '``settings.units.time``.'
             )
-        ) : Or(float, int),
+        ) : [Or(float, int)],
         Optional(
             Literal(
                 'plots',
