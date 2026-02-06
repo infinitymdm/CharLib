@@ -43,79 +43,51 @@ would talk to a semiconductor foundry about manufacturing a chip, and they would
 the PDK. This is still more or less true, but there are also several open source PDKs which are
 publicly available. Google - Tim "mithro" Ansell in particular - deserves a lot of credit for
 sponsoring these efforts (even though they've recently stepped away from open source silicon).
+More recently the FOSSi Foundation has put together some impressive tools to make it easier than
+ever to download and use these open source PDKs.
 
-Let's take a look at a couple of open source PDKs. We're not going to cover everything that's in a
-PDK, but we will go over some of the general concepts.
+Let's walk through the process of downloading a PDK using the FOSSi Foundation's `ciel` tool.
+For starters, you'll need to be on a macOS or Linux system and have a recent version of Python
+installed. There are plenty of guides on how to set Python up; just make sure you have version 3.8
+or newer and PIP.
 
-#### Global Foundries 180nm PDK
+Ok. Step one is to open up a terminal. And let's start by checking what version of Python I have
+installed. Looks like I've got 3.12, which is plenty new enough for this.
 
-We'll begin with the GF180MCU PDK. This is an open source PDK, so all of its files are publicly
-available [here on GitHub](https://github.com/google/gf180mcu-pdk).
+Next let's get `ciel` installed. Following the instructions on `ciel`'s GitHub, let's run
 
-Now from the files listed on the github page, I already know I'm probably only interested in the
-"libraries" folder. Most of these files aren't going to be relevant to what we're doing here, and
-I can generally tell that by the file extension. For instance these ".rst" files are mostly going
-to be documentation on how to contribute to this repository, or maybe if I'm lucky they'll contain
-some info on where to find things, but right now I can guess that the standard cell library is most
-likely in the "libraries" folder. Let's start there.
+`python3 -m pip install --user --upgrade --no-cache-dir ciel`
 
-Here I see some more interesting names. The first "gf180" bit is the same for all of these, so we
-can ignore that; we're interested in what distinguishes these folders.
-- The first one ends in "sram". I can guess that this is going to contain memory blocks.
-- The second one ends in "io". That's probably going to contain layouts for bond pads and pins --
-    stuff for interfacing with the real world. That will be really important later on when I want
-    to make an actual chip, but that's not what we're looking for right now.
-- The third folder ends in "pr" which is a shorthand for "primitives". This is going to contain
-    stuff like transistor models, rules for how resistors and capacitors work, and other "basic"
-    electronic elements. I'll need some stuff from here. We'll come back to this later.
-- The fourth and fifth folders each start with "sc" (short for "standard cells") and then some
-    extra gobbledygook. Those extra letters and numbers tell us two things:
-    - How many "tracks", or layers of metal, the cells are allowed to use. For example the 7t
-        library is going to have 7 tracks of metal, and the 9t library will have 9. Generally the
-        less tracks, the cheaper the manufacturing will be, but that's not at all universal.
-    - What voltage the cells are designed for. Both of these show "5v0", so I know they're built
-        for 5.0 volts. If they said something like "1v8", I'd know we were looking at a 1.8V
-        library instead. Hopefully that's pretty straightforward.
+Ok, looks like that was successful. So next we can use `ciel` to install some PDKs and take a look
+at their files. Let's start with Global Foundries' 180 nanometer PDK, "GF180MCU". I'm first going
+to use `ciel`'s `ls-remote` command to check what versions are available.
 
-For now, let's see what's in the 7-track standard cell library. Clicking through, we see a link to
-a submodule -- a different GitHub repository used to track the 7-track cells independently from the
-rest of the PDK. This is pretty typical for these open source PDKs, so we just follow that link.
+`ciel ls-remote --pdk-family gf180mcu`
 
-Here we have the 7-track standard cell library, and once again I can guess where I want to go from
-the folder names. Most likely what I'm after is going to be under "cells", though there's a chance
-it could be under "models". "tech" probably contains information on how these cells are physically
-laid out.
+In the output here I can see that the latest version isn't too old, released the day after
+Christmas last year. Let's install that version. First I'll copy that commit hash, then we can run
 
-While we're here, I also want to point out the "liberty" folder. This contains several Liberty
-files, each of which contains characterization information for these standard cells under a
-particular set of operating conditions and manufacturing tolerances, or "corners". So for example
-these "tt" files each assume that all the transistors in each cell are "typical" average-speed
-transistors for this manufacturing process; not any faster or slower than the average transistor.
-Likewise the "ff" and "ss" files have details for fast & power-hungry transistors or slow but
-reliable transistors. The "25C", "40C", and "125C" bit refers to the operating temperature, and
-number "v" number bit refers to the supply voltage used. This is in the same format as we talked
-about before, with the "v" taking the place of the decimal. Look at how wildly different some of
-these numbers are! That tells you that this is a very flexible standard cell library, that can
-work (albeit probably not very quickly) even under very low voltages compared to the "standard"
-5.0V that the library was designed around.
+`ciel enable --pdk-family gf180mcu 54435919abffb937387ec956209f9cf5fd2dfbee`
 
-Now these liberty files are exactly what CharLib is designed to produce. That's where it fits into
-the chip design process: the idea is that cell designers such as foundries can use CharLib to
-characterize their cells, then provide those liberty files to others who want to use those cells in
-a design.
+Looks like that was successful as well. Now where did it put all those files it just downloaded?
+Well `ciel` by default puts pdks under a folder called ".ciel" in your user home directory. So
+let's navigate there and take a look. I'll use the `cd` command without any arguments to get home,
+then navigate down into the ".ciel" folder. Using `ls -l` we can see that there are a couple of
+folders here now: gf180mcu A through D. According to
+[Tim Edwards](http://www.opencircuitdesign.com/analog_flow/), a fellow who definitely knows a thing
+or two in this field, each of these folders is a different variant of the PDK. A has 3 metal
+layers, B has four, C has five, and D has five but also a thicker top metal layer. For now let's
+look at the gf180mcuD folder.
 
-Ok, but back to the cells. That's what we're here for. Let's go back up one folder and switch to
-the "cells" directory.
 
-In this directory we have a bunch of folders that each correspond to some type of gate or device.
-Stuff like full adders, half adders, AND gates with various numbers of inputs, et cetera. Scrolling
-down I can see we've got quite a few different types of cells. Let's take a look at what
-information we get for each cell by looking at a 2-input AND gate as an example.
 
-Ok, there are a bunch of different types of files in here. In particular though, I want to point
-out three different files:
 
-> At this point this part of the script falls apart because there aren't spice files in the repo.
-Pivot to using ciel and put less focus on PDK structure.
+Here's where we run into our first question: how do we know which folder we want? Well, in order to
+use CharLib, there are three things we need:
++ SPICE models describing how the transistors work in this manufacturing process.
++ SPICE models of the standard cells we're trying to characterize.
++ A YAML configuration file that points to those spice files and tells CharLib about the cells.
 
-#### Skywater 130nm
+So the primary thing we're looking for here is SPICE files. The easiest way to find those is
+probably to search for them, so let's try that. First, let's try searching for files with the
+".spice" extension. Using the `find` command I can see that we have several files
