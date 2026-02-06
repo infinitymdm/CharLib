@@ -61,7 +61,7 @@ likely in the "libraries" folder. Let's start there.
 
 Here I see some more interesting names. The first "gf180" bit is the same for all of these, so we
 can ignore that; we're interested in what distinguishes these folders.
-- The first one ends in "sram". From that I can guess that this is going to contain memory blocks.
+- The first one ends in "sram". I can guess that this is going to contain memory blocks.
 - The second one ends in "io". That's probably going to contain layouts for bond pads and pins --
     stuff for interfacing with the real world. That will be really important later on when I want
     to make an actual chip, but that's not what we're looking for right now.
@@ -106,5 +106,16 @@ a design.
 
 Ok, but back to the cells. That's what we're here for. Let's go back up one folder and switch to
 the "cells" directory.
+
+In this directory we have a bunch of folders that each correspond to some type of gate or device.
+Stuff like full adders, half adders, AND gates with various numbers of inputs, et cetera. Scrolling
+down I can see we've got quite a few different types of cells. Let's take a look at what
+information we get for each cell by looking at a 2-input AND gate as an example.
+
+Ok, there are a bunch of different types of files in here. In particular though, I want to point
+out three different files:
+
+> At this point this part of the script falls apart because there aren't spice files in the repo.
+Pivot to using ciel and put less focus on PDK structure.
 
 #### Skywater 130nm
