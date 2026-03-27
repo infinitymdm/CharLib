@@ -1,4 +1,13 @@
 graph TB
+    accTitle: CharLib Flow
+    accDescr {
+        CharLib's internal execution process, starting with YAML configuration input and resulting
+        in a Liberty file. CharLib reads simulation settings and a list of cells from the YAML
+        configuration. Cell SPICE netlists and SPICE transistor models are read from each cell
+        entry. Next, cells are analysed to determine which measurement procedures need to be run.
+        Once all cells are analysed, all procedures are executed in parallel as subprocesses.
+        Finally, CharLib collects results and produces an output Liberty file.
+    }
     docs@{shape: doc, label: "YAML Configuration"}
     docs --> config
     config[Load Configuration]
