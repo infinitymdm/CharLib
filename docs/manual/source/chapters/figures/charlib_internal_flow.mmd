@@ -1,0 +1,35 @@
+graph TB
+    docs@{shape: doc, label: "YAML Configuration"}
+    docs --> config
+    config[Load Configuration]
+    config --> settings
+    config --> cells
+    config --> netlists
+    config --> models
+    settings[Simulation Settings]
+    settings --> procedures
+    cells@{shape: bow-rect, label: "List of Cells"}
+    cells --> analysis
+    netlists@{shape: docs, label: "SPICE Netlists"}
+    netlists --> analysis
+    models@{shape: docs, label: "Transistor Models"}
+    models --> analysis
+    subgraph analysis [Cell Analysis]
+        validate_net{Is cell SPICE valid?}
+        validate_net -->|Yes| stimulus
+        validate_net -->|No| check_omit
+        check_omit{Omit invalid cells?}
+        check_omit -->|Yes| skip
+        check_omit -->|No| error
+        skip[Skip cell]
+        error@{shape: dbl-circ, label: "Error"}
+        stimulus[Generate test vectors]
+        stimulus --> prepare
+        prepare[Prepare measurement procedures]
+    end
+    analysis --> procedures
+    procedures@{shape: subproc, label: "Run Procedures"}
+    procedures --> results
+    results[Collect Results]
+    results --> output
+    output([Liberty File])
