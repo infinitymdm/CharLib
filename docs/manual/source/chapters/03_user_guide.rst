@@ -9,9 +9,7 @@ Flow of operation
 CharLib runs analog simulation of the cells to be characterized to determine their electrical
 properties. The overal flow is shown in the figure below.
 
-.. image:: figures/flow_block_diagram.svg
-    :width: 400
-    :align: center
+.. mermaid:: figures/charlib_internal_flow.mmd
 
 To run characterization, you must provide:
 

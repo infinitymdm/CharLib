@@ -27,6 +27,7 @@ docs = [
     "Sphinx>=8.2.3",
     "jsonschema2rst>=0.1.7",
     "sphinx-rtd-theme>=3.0.2",
+    "sphinxcontrib-mermaid>=2.0.1"
 ]
 
 [project.urls]
