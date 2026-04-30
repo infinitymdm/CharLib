@@ -208,12 +208,7 @@ def find_setup_hold_for_path(cell, config, settings, variation, path, state_maps
                             title=_base_title + '\nSweep B: setup outer, hold inner')
 
         # Step 6: pick the balanced knee point from the merged contour.
-        print('latched_a', latched_a)
-        print('latched_b', latched_b)
-        print('setup_vals_s', setup_vals_s)
-        print('hold_vals_s', hold_vals_s)
         boundary_pts = extract_2d_contour(latched_a, latched_b, setup_vals_s, hold_vals_s)
-        print('boundary_pts', boundary_pts)
         (knee_setup_s, knee_hold_s), knee_is_fallback = utils.find_knee_point(
             boundary_pts,
             chord_p0=(to_t(step1_setup_result), to_t(step2_hold_result)),
@@ -444,7 +439,7 @@ def get_c2q(cell, config, settings, t_clk_slew, t_data_slew, t_setup_skew, t_hol
     th_rise = settings.logic_thresholds.rising
     th_fall = settings.logic_thresholds.falling
 
-    # Build clock waveform
+    # Build clock waveform (lockdown pulse, lockdown settling, clock activation)
     (v0, v1) = (vss, vdd) if state_map[cell.clock.name] == '1' else (vdd, vss)
     clk_pwl = utils.slew_pwl(v0, v1, t_clk_slew, t_stabilizing, th_low, th_high)
     clk_pwl += utils.slew_pwl(v1, v0, t_clk_slew, t_stabilizing, th_low, th_high, t_start=clk_pwl[-1][0])[1:]
@@ -471,15 +466,12 @@ def get_c2q(cell, config, settings, t_clk_slew, t_data_slew, t_setup_skew, t_hol
     # Build the data waveform
     (v0, v1) = (vss, vdd) if data_transition == '01' else (vdd, vss)
     data_pwl = utils.slew_pwl(v0, v1, t_data_slew, t_data_start, th_low, th_high)
-    data_pwl += utils.slew_pwl(v1, v0, t_data_slew, data_pulse_width, th_low, th_high, data_pwl[-1][0])[1:]
+    data_pwl += utils.slew_pwl(v1, v0, t_data_slew, data_pulse_width, th_low, th_high, t_start=data_pwl[-1][0])[1:]
 
     # Initialize circuit
     circuit = utils.init_circuit("sequential_setup_hold", cell.netlist, config.models,
                                     settings.named_nodes, settings.units)
 
-    # FIXME: figure out whether dyn supplies are used
-    circuit.V('dd_dyn', 'vdd_dyn', circuit.gnd, vdd) # separate voltage sources for VDD / VSS pins of DUT for measuring dynamic power
-    circuit.V('ss_dyn', 'vss_dyn', circuit.gnd, vss) # separate voltage sources for VDD / VSS pins of DUT for measuring dynamic power
     circuit.V('o_cap', 'vout', 'wout', 0) # 0 volt source in series with c_load is a trick to measure current through the load capacitor.
     circuit.C('c_load', 'wout', circuit.gnd, c_load)
 
@@ -489,19 +481,19 @@ def get_c2q(cell, config, settings, t_clk_slew, t_data_slew, t_setup_skew, t_hol
 
     # Initialize device under test subcircuit and wire up pins
     connections = []
-    for pin in cell.all_pins():
-      if pin.role == 'clock':
-          connections.append('vclk')
-      elif pin.name == data_pin:
-          connections.append('vdata')
-      elif pin.name == output_pin:
-          connections.append('vout')
-      elif pin.role == 'primary_power':
-          connections.append('vdd')
-      elif pin.role == 'primary_ground':
-          connections.append('vss')
-      else:
-          connections.append('wfloat0') # float unrecognized
+    for pin in cell.pins_in_netlist_order():
+        if pin.role == 'clock':
+            connections.append('vclk')
+        elif pin.name == data_pin:
+            connections.append('vdata')
+        elif pin.name == output_pin:
+            connections.append('vout')
+        elif pin.role == 'primary_power':
+            connections.append('vdd')
+        elif pin.role == 'primary_ground':
+            connections.append('vss')
+        else:
+            connections.append('wfloat0') # float unrecognized
     circuit.X('dut', cell.name, *connections)
 
     # Build the simulation
