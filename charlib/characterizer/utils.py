@@ -93,7 +93,7 @@ def init_circuit(title, cell_netlist, models, supplies, units):
 
 def find_min_valid(probe_fn, start, step, tolerance, max_exp=1000):
     """Find the minimum x such that probe_fn(x) is not NaN.
-    When flipflop fails to latch the correct value, get_c2q returns NaN.
+    When flipflop fails to latch the correct value, get_c2q returns inf.
 
     Setup and hold times may be negative, so start must be a guaranteed-valid point
     (large enough that the cell always latches). The search expands downward from
@@ -116,7 +116,7 @@ def find_min_valid(probe_fn, start, step, tolerance, max_exp=1000):
         candidate = start - step * (2 ** exp)
         phase1_candidates.append(candidate)
         result = probe_fn(candidate)
-        if math.isnan(result):
+        if math.isinf(result):
             lo = candidate
             break
         hi = candidate
@@ -128,7 +128,7 @@ def find_min_valid(probe_fn, start, step, tolerance, max_exp=1000):
     while (hi - lo) > tolerance:
         mid = (lo + hi) / 2
         phase2_candidates.append((lo, mid, hi))
-        if math.isnan(probe_fn(mid)):
+        if math.isinf(probe_fn(mid)):
             lo = mid
         else:
             hi = mid
@@ -252,7 +252,7 @@ def write_c2q_csv(debug_path, settings, c2q_a, c2q_b, setup_vals_s, hold_vals_s,
     are the actual sweep points, each annotated with a 'valid' flag.
     """
     t_unit = settings.units.time.prefixed_unit
-    c2q_merged = np.where(~np.isnan(c2q_a), c2q_a, c2q_b)
+    c2q_merged = np.where(~np.isinf(c2q_a), c2q_a, c2q_b)
 
     debug_path.mkdir(parents=True, exist_ok=True)
     with open(debug_path / 'c2q_merged.csv', 'w', newline='') as f:
@@ -261,15 +261,15 @@ def write_c2q_csv(debug_path, settings, c2q_a, c2q_b, setup_vals_s, hold_vals_s,
                          f'c2q_{t_unit.str_spice()}', 'valid', f'c2q_threshold_{t_unit.str_spice()}'])
         # Reference row: c2q at (t_stabilizing, t_stabilizing) and the degradation threshold
         t_stab_display = float(t_stabilizing.convert(t_unit).value)
-        ref_display = float((ref_c2q_steps @ PySpice.Unit.u_s).convert(t_unit).value) if not math.isnan(ref_c2q_steps) else float('nan')
+        ref_display = float((ref_c2q_steps @ PySpice.Unit.u_s).convert(t_unit).value) if not math.isinf(ref_c2q_steps) else float('inf')
         thr_display = float((c2q_threshold @ PySpice.Unit.u_s).convert(t_unit).value) if not math.isinf(c2q_threshold) else float('inf')
         writer.writerow([f'{t_stab_display:.6g}', f'{t_stab_display:.6g}',
                          f'{ref_display:.6g}', True, f'{thr_display:.6g}'])
         for hi, h_s in enumerate(hold_vals_s):
             for si, s_s in enumerate(setup_vals_s):
                 val = c2q_merged[hi, si]
-                if math.isnan(val):
-                    writer.writerow([f'{s_s:.6g}', f'{h_s:.6g}', 'nan', False, ''])
+                if math.isinf(val):
+                    writer.writerow([f'{float(s_s):.6g}', f'{float(h_s):.6g}', 'inf', False, ''])
                 else:
                     c2q_display = float((val @ PySpice.Unit.u_s).convert(t_unit).value)
-                    writer.writerow([f'{s_s:.6g}', f'{h_s:.6g}', f'{c2q_display:.6g}', val < c2q_threshold, ''])
+                    writer.writerow([f'{float(s_s):.6g}', f'{float(h_s):.6g}', f'{c2q_display:.6g}', val < c2q_threshold, ''])
