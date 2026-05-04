@@ -34,5 +34,3 @@ if __name__ == "__main__":
         print(task.__name__, args)
         cell_group = task(*args)
         characterizer.library.add_group(cell_group)
-        break
-    print(str(characterizer.library))

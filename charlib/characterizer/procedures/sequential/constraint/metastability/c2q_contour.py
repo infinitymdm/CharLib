@@ -124,28 +124,31 @@ def find_setup_hold_for_path(cell, config, settings, variation, path, state_maps
 
         # Step 1: setup time with hold fixed at T_STABILIZING, this gives min setup
         step1_path = (state_debug_path / 'step1') if settings.debug else None
-        step1_setup_result = utils.bisect(
+        step1_setup_result = utils.find_min_valid_bisect(
             lambda t_s: step_c2q(t_s, T_STABILIZING, step1_path) - step_threshold,
-            -T_STABILIZING, T_STABILIZING, tolerance=TOLERANCE)
-
+            T_STABILIZING, tolerance=TOLERANCE)
+        print('step1', step1_setup_result)
         # Step 2: hold time with setup fixed at min_setup, this gives max hold
         step2_path = (state_debug_path / 'step2') if settings.debug else None
-        step2_hold_result = utils.bisect(
+        step2_hold_result = utils.find_min_valid_bisect(
             lambda t_h: step_c2q(step1_setup_result, t_h, step2_path) - step_threshold,
-            -T_STABILIZING, T_STABILIZING, tolerance=TOLERANCE)
-
+            T_STABILIZING, tolerance=TOLERANCE)
+        print('step2: ', step2_hold_result)
         # Step 3: hold time with setup fixed T_STABILIZING, this gives min hold
         step3_path = (state_debug_path / 'step3') if settings.debug else None
-        step3_hold_result = utils.bisect(
+        step3_hold_result = utils.find_min_valid_bisect(
             lambda t_h: step_c2q(T_STABILIZING, t_h, step3_path) - step_threshold,
-            -T_STABILIZING, step2_hold_result, tolerance=TOLERANCE)
+            step2_hold_result, tolerance=TOLERANCE)
+        print('step3: ', step3_hold_result)
         # Step 4: find setup time with hold fixed at min hold, this gives max setup
         step4_path = (state_debug_path / 'step4') if settings.debug else None
-        step4_setup_result = utils.bisect(
+        step4_setup_result = utils.find_min_valid_bisect(
             lambda t_s: step_c2q(t_s, step3_hold_result, step4_path) - step_threshold,
-            step1_setup_result, T_STABILIZING, tolerance=TOLERANCE)
+            T_STABILIZING, tolerance=TOLERANCE)
+        print('step4: ', step4_setup_result)
 
         # Step 5: sweep the setup×hold boundary and plot the latched contour
+        print(f'Sweep boundary with corners t_s={step4_setup_result}, t_h={step2_hold_result}')
         step5_path = (state_debug_path / 'step5') if settings.debug else None
         ref_c2q = step_c2q(step4_setup_result, step2_hold_result, step5_path)
         c2q_threshold = ref_c2q * 1.2
@@ -411,9 +414,10 @@ def get_c2q(cell, config, settings, t_clk_slew, t_data_slew, t_setup_skew, t_hol
     for a given setup skew / hold skew, load capacitance, and stabilizing time."""
 
     # Fail immediately for 0 data pulse width
-    if t_setup_skew + t_hold_skew < 0:
+    if t_setup_skew + t_hold_skew <= 0:
         return float('inf')
 
+    print(t_setup_skew, t_hold_skew)
     data_pin, data_transition, output_pin, output_transition = path
 
     if debug_path is not None:
@@ -492,7 +496,7 @@ def get_c2q(cell, config, settings, t_clk_slew, t_data_slew, t_setup_skew, t_hol
         temperature=settings.temperature,
         nominal_temperature=settings.temperature
     )
-    simulation.options('nopage', 'nomod', trtol=1)
+    simulation.options('nopage', 'nomod', rshunt=1e9, trtol=0.5)
     simulation.transient(
         step_time=min(t_data_slew, t_clk_slew)/4,
         end_time=t_data_start + data_pulse_width + t_stabilizing,
