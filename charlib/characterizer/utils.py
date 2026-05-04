@@ -137,6 +137,23 @@ def find_min_valid(probe_fn, start, step, tolerance, max_exp=1000):
     return hi, phase1_candidates, phase2_candidates
 
 
+def bisect(f, a, b, tolerance=1e-12, f_a=None, f_b=None):
+    """Find the root x in [a, b] such that f(x) = 0 is within tolerance."""
+    x = (a + b)/2
+    if abs(x - a) < tolerance:
+        return x
+    f_x = float(f(x))
+    f_a = f_a if f_a is not None else float(f(a))
+    if (f_a*f_x <= 0):
+        return bisect(f, a, x, tolerance=tolerance, f_a=f_a, f_b=f_x)
+    f_b = f_b if f_b is not None else float(f(b))
+    if (f_b*f_x <= 0):
+        return bisect(f, x, b, tolerance=tolerance, f_a=f_x, f_b=f_b)
+    if not math.isinf(f_x):
+        return x # If valid, it's better than nothing
+    raise ValueError(f'f(a) = {f_a} has the same sign as f(b) = {f_b}! Unable to solve with bisection')
+
+
 def find_knee_point(boundary_points, chord_p0, chord_p1, arc_threshold=0.1):
     """Select a balanced (knee) setup/hold point from boundary samples.
 
