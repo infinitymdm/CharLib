@@ -112,7 +112,6 @@ def test_inverting_dffsr_with_active_low_sr():
         {'CLK': '1', 'D': '01', 'IQN': '1', 'S': '1', 'R': '1', 'QN': '10'},
     ]
     for vector in function.test_vectors:
-        print('chk', vector)
         assert(vector in expected_test_vectors)
     assert(len(expected_test_vectors) == len(function.test_vectors))
 
@@ -127,6 +126,31 @@ def test_inverting_dlat():
 
 def test_and2():
     pass # TODO
+
+def test_a2bb2o():
+    """Verify truth table for and(or(not(a1), not(a2)), or(b1, b2))"""
+    output = Pin('Y', 'output')
+    function = Function(output, '(~A1 | ~A2) & (B1 | B2)')
+    expected_truth_table = [
+        {'A1': 0, 'A2': 0, 'B1': 0, 'B2': 0, 'Y': 0},
+        {'A1': 0, 'A2': 0, 'B1': 0, 'B2': 1, 'Y': 1},
+        {'A1': 0, 'A2': 0, 'B1': 1, 'B2': 0, 'Y': 1},
+        {'A1': 0, 'A2': 0, 'B1': 1, 'B2': 1, 'Y': 1},
+        {'A1': 0, 'A2': 1, 'B1': 0, 'B2': 0, 'Y': 0},
+        {'A1': 0, 'A2': 1, 'B1': 0, 'B2': 1, 'Y': 1},
+        {'A1': 0, 'A2': 1, 'B1': 1, 'B2': 0, 'Y': 1},
+        {'A1': 0, 'A2': 1, 'B1': 1, 'B2': 1, 'Y': 1},
+        {'A1': 1, 'A2': 0, 'B1': 0, 'B2': 0, 'Y': 0},
+        {'A1': 1, 'A2': 0, 'B1': 0, 'B2': 1, 'Y': 1},
+        {'A1': 1, 'A2': 0, 'B1': 1, 'B2': 0, 'Y': 1},
+        {'A1': 1, 'A2': 0, 'B1': 1, 'B2': 1, 'Y': 1},
+        {'A1': 1, 'A2': 1, 'B1': 0, 'B2': 0, 'Y': 0},
+        {'A1': 1, 'A2': 1, 'B1': 0, 'B2': 1, 'Y': 0},
+        {'A1': 1, 'A2': 1, 'B1': 1, 'B2': 0, 'Y': 0},
+        {'A1': 1, 'A2': 1, 'B1': 1, 'B2': 1, 'Y': 0}
+    ]
+    for row in function.truth_table():
+        assert(row in expected_truth_table)
 
 def test_xor2():
     pass # TODO
