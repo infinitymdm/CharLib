@@ -44,7 +44,7 @@ class Characterizer:
             if self.settings.omit_on_failure:
                 return
             else:
-                raise ValueError(f'Unable to add cell {name}') from e
+                raise ValueError(f'Unable to add cell {name}: {e}') from e
 
         # Handle keywords for plots
         if properties.get('plots', []) == 'all':
