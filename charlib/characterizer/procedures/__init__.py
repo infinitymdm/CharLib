@@ -1,5 +1,8 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
+import pickle
+
+from charlib.liberty.liberty import Group
 
 registered_procedures = {}
 
@@ -44,27 +47,16 @@ class Procedure(ABC):
         """Return a list of parameter names used to define variations of this procedure."""
         pass
 
-    @property
-    @abstractmethod
-    def variation(self) -> dict:
-        """Return a dict of parameter-value pairs that uniquely define this procedure instance."""
-        pass
-
     @classmethod
     @abstractmethod
     def runtime_params(cls) -> list:
         """Return a list of parameter names used at runtime in this procedure."""
         pass
 
-    @property
+    @classmethod
     @abstractmethod
-    def liberty(self):
-        """Return the liberty results for this procedure.
-
-        If the procedure has not yet been run, this contains a 'skeleton' liberty object not yet
-        populated with results. If simulation is already complete, this returns the populated
-        liberty object.
-        """
+    def measurements(cls):
+        """Return a liberty object describing the measurements this procedure provides."""
         pass
 
     @classmethod
@@ -76,7 +68,7 @@ class Procedure(ABC):
     @classmethod
     @abstractmethod
     def generate(cls, cell, config, settings):
-        """Generate procedure instances to make relevant measurements."""
+        """Generate directed graphs of procedures required to make relevant measurements."""
         pass
 
     @abstractmethod
@@ -86,8 +78,50 @@ class Procedure(ABC):
 
     def __call__(self, *args, **kwargs):
         """Run the simulations associated with this procedure instance"""
-        return self.simulate(*args, **kwargs)
+        if kwargs.get('clobber'):
+            self.simulate(*args, **kwargs)
+            self.export_results()
+            return self.liberty
+        try:
+            self.load_results()
+        except FileNotFoundError:
+            self.simulate(*args, **kwargs)
+            self.export_results()
+        return self.liberty
 
-    def workdir(self) -> Path:
+    @property
+    def target_cell_name(self) -> str:
+        """Return the name of the targeted cell"""
+        return self._target_cell_name
+
+    @property
+    def variation(self) -> dict:
+        """Return a dict of parameter-value pairs that uniquely define this procedure instance."""
+        return self._variation
+
+    @property
+    def liberty(self):
+        """Return the liberty results for this procedure.
+
+        If the procedure has not yet been run, this contains a 'skeleton' liberty object not yet
+        populated with results. If simulation is already complete, this returns the populated
+        liberty object.
+        """
+        return self._liberty
+
+    def get_workdir(self) -> Path:
         """Return the name of this procedure's unique work directory"""
-        return Path(self.__name__) / '__'.join([f'{k}_{v}' for k, v in self.variation.items()])
+        config_str = '__'.join([f'{k}_{v}' for k, v in self.variation.items()])
+        return Path(self.target_cell_name) / self.__name__ / config_str
+
+    def export_results(self):
+        """Write this procedure's liberty results to the work directory"""
+        workdir = self.get_workdir()
+        workdir.mkdir(parents=True, exist_ok=True)
+        with open(workdir / 'result.lib.pkl', 'wb') as result_file:
+            pickle.dump(self.liberty)
+
+    def load_results(self):
+        """Load this procedure's liberty results from the work directory"""
+        with open(self.get_workdir() / 'result.lib.pkl', 'rb') as result_file:
+            return pickle.load(result_file)
