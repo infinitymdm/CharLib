@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
+from charlib.characterizer.cell import Cell, CellTestConfig
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Any, Dict, FrozenSet, Generator, List, Set, Tuple, Union
-from pathlib import Path
+import itertools
 import json
-
-from charlib.liberty.liberty import Group
+from pathlib import Path
+from typing import Any, Generator, Union
 
 registered_procedures = {}
 
@@ -43,11 +43,11 @@ class ProcedureFailedException(Exception):
 
 @dataclass(frozen=True)
 class Variation:
-    """Frozen hashable dataclass for uniquely indentifying a Procedure variation.
+    """Frozen hashable dataclass for capturing a unique set of simulation conditions.
 
     Stores variation conditions as a frozenset of 2-tuples, e.g. {('temperature', 25.0), ('load', 1.2)}.
     """
-    conditions: FrozenSet[Tuple[str, Any]]
+    conditions: frozenset[tuple[str, str|float]]
 
     def to_path_slug(self) -> str:
         """Construct a deterministic, filesystem-safe string by sorting condition keys."""
@@ -56,10 +56,17 @@ class Variation:
 
 
 @dataclass
+class SimulationConfig:
+    target: Cell
+    config: CellTestConfig
+    settings: Any
+
+
+@dataclass
 class SimulationResult:
     """Represents a set of measurements from a simulation tagged with the variation"""
     variation: Variation            # The unique variation for this result
-    measurements: Dict[str, float]  # Named measurements produced by the simulation
+    measurements: dict[str, float]  # Named measurements produced by the simulation
     success: bool                   # Whether the simulation completed without any errors
 
 
@@ -73,10 +80,11 @@ class NodeState(Enum):
 
 class SimulationNode(ABC):
     """Base class representing a single unit of execution within a directed acyclic graph."""
-    def __init__(self, variation: Variation, work_dir: Path)
+    def __init__(self, config: SimulationConfig, variation: Variation, work_dir: Path):
+        self.config = config
         self.variation = variation
         self.work_dir = work_dir
-        self.dependencies: Set['SimulationNode'] = set()
+        self.dependencies: set['SimulationNode'] = set()
 
     def add_dependency(self, node: 'SimulationNode'):
         """Register an upstream node as prerequisite for this node."""
@@ -104,7 +112,7 @@ class SimulationNode(ABC):
         with open(self.work_dir / 'result.pkl', 'wb') as f:
             json.dump({'measurements': result.measurements, 'success': result.success}, f)
 
-    def execute(self, dependency_results: Dict['SimulationNode', SimulationResult], clobber: bool = False) -> Union[SimulationResult, Generator]:
+    def execute(self, dependency_results: dict['SimulationNode', SimulationResult], clobber: bool = False) -> Union[SimulationResult, Generator]:
         """Run simulation (with cache short-circuiting) and return the results."""
         if not clobber and self._is_cached():
             return self._load_cache()
@@ -115,7 +123,7 @@ class SimulationNode(ABC):
         return result
 
     @abstractmethod
-    def _run_simulation(self, dependency_results: Dict['SimulationNode', SimulationResult]) -> Union[SimulationResult, Generator]:
+    def _run_simulation(self, dependency_results: dict['SimulationNode', SimulationResult]) -> Union[SimulationResult, Generator]:
         """Core logic implemented by subclasses. Accepts resolved upstream data and returns results."""
         pass
 
@@ -128,7 +136,7 @@ class AdaptiveSimulationNode(SimulationNode):
     """
 
     @abstractmethod
-    def _run_simulation(self) -> Generator[SimulationNode, SimulationResult]
+    def _run_simulation(self, dependency_results: dict['SimulationNode', SimulationResult]) -> Generator[SimulationNode, SimulationResult]:
         """Yields SimulationNodes that must be evaluated by the orchestrator.
 
         The orchestrator sends the SimulationResult back into the generator for use by the next
@@ -162,8 +170,20 @@ class Procedure(ABC):
         pass
 
     @classmethod
+    def params(cls) -> list:
+        """Return a list of all parameter names"""
+        return cls.variation_params() + cls.runtime_params()
+
+    @classmethod
+    def vary_config_params(cls, config: CellTestConfig):
+        """Generate all unique parameter combinations from a config"""
+        param_names, values = zip(*[(k, config.parameters[k]) for k in cls.params()])
+        for combination in itertools.product(*[v if isinstance(v, list) else [v] for v in values]):
+            yield zip(param_names, combination)
+
+    @classmethod
     @abstractmethod
-    def is_applicable(self, cell, config) -> bool:
+    def is_applicable(cls, config: SimulationConfig) -> bool:
         """Check whether the targeted cell is compatible with this procedure.
 
         This step should involve at least two checks:
@@ -174,7 +194,7 @@ class Procedure(ABC):
 
     @classmethod
     @abstractmethod
-    def generate_dag(cls, cell, config, settings) -> Set[SimulationNode]:
+    def generate_dag(cls, config: SimulationConfig) -> set[SimulationNode]:
         """Generate a DAG representing the steps for this procedure's variations.
 
         Generates variations from parameter combinations, instantiates SimulationNodes, map their

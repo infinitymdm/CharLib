@@ -1,15 +1,13 @@
 """Encapsulates a cell to be tested."""
 
-import itertools, re
-from pathlib import Path
-
-from charlib.characterizer.procedures import registered_procedures
-
 from charlib.characterizer.logic.evaluators import OPERAND_REGEX
 from charlib.characterizer.logic.functions import Function
-from charlib.characterizer.port import Port, Pin, DifferentialPair
 from charlib.characterizer.logic.Parser import parse_logic
+from charlib.characterizer.port import Port, Pin, DifferentialPair
 from charlib.liberty import liberty
+import itertools
+import re
+from pathlib import Path
 
 class Cell:
     """A standard cell and its functional details"""
@@ -106,9 +104,12 @@ class Cell:
         # Helper function for direction matching with minimal membership checking
         def match_direction(pin_name):
             match (pin_name in inputs, pin_name in outputs):
-                case True, True:  return 'inout'
-                case False, True: return 'output'
-                case True, False: return 'input'
+                case True, True:
+                    return 'inout'
+                case False, True:
+                    return 'output'
+                case True, False:
+                    return 'input'
             raise ValueError(f'Unable to determine direction for pin "{pin_name}"')
 
         # Get pin names from subckt and iterate until there are no unassigned pins remaining
@@ -139,7 +140,6 @@ class Cell:
 
         ## 3. Construct functions based on pin types & feedback paths
         for output, expression in functions.items():
-            is_inverting = output in [pair.inverting_port_name for pair in self.diff_pairs.values()]
             state = states.get(output)
             # TODO: Pass only pins which are related to this function
             # TODO: Handle multiple clocks, etc.
@@ -315,14 +315,10 @@ class Cell:
 class CellTestConfig:
     """Capture configuration information for testing one or more cells"""
 
-    def __init__(self, models: list, plots=[], timestep=None, **parameters):
+    def __init__(self, models: list, **parameters):
         """Construct a new test configuration.
 
         :param models: Transistor models for the cell under test
-        :param plots: A list of plot types to generate from simulation results. Defaults to None.
-        :param timestep: The simulation timestep to use for transient simulations, specified in
-                         settings.units.time units. Defaults to 1/8 the minimum data_slew or
-                         clock_slew if not provided.
         :param **parameters: Keyword arguments containing lists of test parameters, as described
                              below:
             :param data_slews: A list of input data slew rates to test, specified in
@@ -332,7 +328,7 @@ class CellTestConfig:
             :param loads: A list of output load capacitances to test, specified in
                           settings.units.capacitance units
         """
-        self.models = list()
+        self.models = []
         for model in models:
             # Split to path and (optional) section, then validate both
             filename, *libname = model.split()
@@ -345,11 +341,7 @@ class CellTestConfig:
             elif not len(libname) == 1:
                 libname = []
             self.models.append((filename, *libname))
-
-        self.timestep = timestep
-        self.plots = plots
-        supported_parameters = {param for rp in registered_procedures.values() for param in rp['parameters']}
-        self.parameters = {k: parameters[k] for k in supported_parameters if k in parameters}
+        self.parameters = parameters
 
     def variations(self, *keys):
         """Generator for test configuration variations

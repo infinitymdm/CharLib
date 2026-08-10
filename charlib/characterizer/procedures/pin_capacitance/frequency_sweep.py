@@ -1,18 +1,17 @@
 from charlib.characterizer import utils
 from charlib.characterizer.cell import Port
-from charlib.characterizer.procedures import Procedure
-from charlib.characterizer.procedures.aggregates import SelectMean
-from charlib.liberty import liberty
+from charlib.characterizer.procedures import Procedure, SimulationNode, SimulationResult, Variation
+from charlib.characterizer.procedures.aggregators import MaxNode, MeanNode
 import numpy as np
 import PySpice
-from PySpice.Unit import *
+from typing import List, Set
 
 class InputCapacitanceFrequencySweep(Procedure):
     """Measure input pin capacitance by performing an AC frequency sweep"""
 
     @classmethod
     def variation_params(cls) -> list:
-        return ['loads']
+        return []
 
     @classmethod
     def runtime_params(cls) -> list:
@@ -25,68 +24,91 @@ class InputCapacitanceFrequencySweep(Procedure):
         ]
 
     @classmethod
-    def measurements(cls):
-        cell_grp = liberty.Group('cell', 'unknown')
-        pin_grp = liberty.Group('pin', 'unknown')
-        pin_grp.add_attribute('capacitance')
-        cell_grp.add_group(pin_grp)
-        return cell_grp
+    def _target_pin_roles(cls) -> List[str]:
+        return ['logic', 'clock', 'analog', 'reset', 'set', 'enable']
 
     @classmethod
-    def check_target(cls, cell, config) -> bool:
-        has_inputs = bool(cell.inputs)
-        has_params = all(p in config.parameters for p in cls.runtime_params())
+    def is_applicable(cls, config) -> bool:
+        """Verify the cell has input pins and the config has the required parameters"""
+        has_inputs = config.cell.filter_pins(direction='input', role=cls._target_pin_roles())
+        has_params = set(cls.params()).issubset(config.config.parameters)
         return has_inputs and has_params
 
     @classmethod
-    def generate(cls, cell, config, settings):
-        """Build digraphs for measuring the input capacitance of each pin"""
-        # Each pin's digraph should have 2 topological layers:
-        # 1. Measure capacitance for each variation
-        # 2. Use some criterion to determine the input capacitance result
+    def generate_dag(cls, config) -> Set[SimulationNode]:
+        for target_pin in config.cell.filter_pins(direction='input', role=cls._target_pin_roles()):
+            # Final result will be aggregated from many simulations
+            aggregator_criterion = config.config.parameters.get('in_cap_selection_criterion').lower()
+            if aggregator_criterion == 'max':
+                aggregator_node = MaxNode()
+            else:
+                aggregator_node = MeanNode()
 
-        for target_pin in cell.filter_pins(direction=['input']):
-            def liberty_callback(result):
-                add_attr_to_liberty_pin_group(cell.name, target_pin.name, 'capacitance', result)
-            for variation in config.variations(cls.variation_params() + cls.runtime_params()):
-                in_cap_procedure = cls(cell, target_pin, **variation)
-            select_procedure = SelectMean(liberty_callback, ) # TODO: How do I map inputs to the results?
+            # Generate simulation nodes
+            for config_conditions in cls.vary_config_params(config.config):
+                variation = Variation(frozenset([('target_pin', target_pin), *config_conditions]))
+                work_dir = config.settings.work_dir / config.cell.name / cls.__name__ / variation.to_path_slug()
+                sim_node = InputCapacitanceFrequencySweepNode(variation, work_dir)
+                aggregator_node.add_dependency(sim_node)
 
-
-    def __init__(self, cell, target_pin, **kwargs)
-        # Store target cell name
-        self._target_cell_name = cell.name
-
-        # Store variation params
-        self._variation = {
-            'target_cell': cell.name
-            'target_pin': target_pin.name
-        }
-        param_keys = self.variation_params() + self.runtime_params()
-        self._variation |= {k: kwargs.get(k) for k in param_keys}
-
-        # Store liberty skeleton
-        cell_group = cell.liberty
-        pin_group = liberty.Group('pin', target_pin.name)
-        pin_group.add_attribute('capacitance')
-        cell_group.add_group(pin_group)
-        self._liberty = cell_group
-
-    def simulate(self, cell, settings):
-        """Use an AC frequency sweep to measure the capacitance of the target pin.
-
-        Treat the cell as a grounded capacitor. Perform an AC sweep with a fixed current amplitude,
-        then evaluate capacitance as d/ds(i(s)/v(s)).
-        """
-        v_supply = settings.primary_power.voltage * settings.units.voltage
-        v_ground = settings.primary_ground.voltage * settings.units.voltage
-
-        i_in = self.variation['in_cap_current_amplitude'] * settings.units.current
-
-        circuit = utils.init_circuit(self.__name__, cell.netlist, config.models,
-                                     settings.named_nodes, settings.units)
-        circuit.I('input', circuit.gnd, 'input', f'DC 0 AC {PySpice.Spice.unit.str_spice(i_in)}')
+            # Yield each terminal node
+            yield aggregator_node
 
 
-def add_attr_to_liberty_pin_group(cell_name, pin_name, attr_name, value):
-    # TODO
+class InputCapacitanceFrequencySweepNode(SimulationNode):
+    """Stimulate an input pin with a constant-amplitude AC current chirp to measure capacitance.
+
+    Modeling the cell as a grounded capacitor, perform an AC frequency sweep and measure voltage.
+    Compute capacitance as d/ds(i(s)/v(s)).
+    """
+
+    def _run_simulation(self, dependency_results) -> SimulationResult:
+        cell = self.config.cell
+        config = self.config.config
+        settings = self.config.settings
+
+        conditions = dict(zip(self.variation.conditions))
+        f_start = conditions['in_cap_start_frequency'] @ PySpice.Unit.u_Hz
+        f_stop = conditions['in_cap_end_frequency'] @ PySpice.Unit.u_Hz
+        r_shunt = conditions['in_cap_shunt_resistance'] * settings.units.resistance
+        i_in = conditions['in_cap_current_amplitude'] * settings.units.current
+
+        # Build the circuit
+        circuit = utils.init_circuit(self.variation.to_path_slug(), cell.netlist, config.models, settings.named_nodes, settings.units)
+        circuit.I('in', circuit.gnd, 'vin', f'DC 0 AC {PySpice.Spice.unit.str_spice(i_in)}')
+        connections = []
+        for pin in cell.pins_in_netlist_order():
+            match pin.role:
+                case Port.Role.POWER:
+                    connections.append(settings.primary_power.name)
+                case Port.Role.GROUND:
+                    connections.append(settings.primary_ground.name)
+                case Port.Role.NWELL:
+                    connections.append(settings.nwell.name)
+                case Port.Role.PWELL:
+                    connections.append(settings.pwell.name)
+                case _: # Any other role (logic, clock, analog, clear, enable, set, or preset)
+                    if pin.name == conditions['target_pin']:
+                        connections.append('vin')
+                    else:
+                        # Add a shunt resistor to each other pin
+                        circuit.R(pin.name, f'v{pin.name}', circuit.gnd, r_shunt)
+                        connections.append(f'v{pin.name}')
+        circuit.X('dut', cell.name, *connections)
+
+        simulator = PySpice.Simulator.factory(simulator=settings.simulation.backend)
+        simulation = simulator.simulation(circuit, temperature=settings.temperature)
+        simulation.ac('dec', 100, f_start, f_stop, run=False)
+
+        if settings.debug:
+            debug_path = settings.debug_dir / cell.name / __name__.split('.')[-1]
+            debug_path.mkdir(parents=True, exist_ok=True)
+            with open(debug_path/f'{conditions["target_pin"]}.spice', 'w') as spice_file:
+                spice_file.write(str(simulation))
+
+        analysis = simulator.run(simulation)
+        conductance = np.reciprocal(np.abs(analysis.vin)/i_in)
+        [*_, capacitance] = np.polynomial.polynomial.polyfit(analysis.frequency, conductance, 1)
+        converted_cap = (capacitance @ PySpice.Unit.u_F).convert(settings.units.capacitance.prefixed_unit).value
+
+        return SimulationResult(self.variation, {'capacitance': converted_cap}, capacitance > 0)

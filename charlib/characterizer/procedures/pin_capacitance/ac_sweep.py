@@ -5,7 +5,6 @@ from PySpice.Unit import *
 from charlib.characterizer import utils
 from charlib.characterizer.cell import Port
 from charlib.characterizer.procedures import register
-from charlib.liberty import liberty
 
 @register
 def ac_sweep(cell, config, settings):
@@ -24,9 +23,6 @@ def measure_pin_cap_by_ac_sweep(cell, settings, config, target_pin):
     Returns a liberty cell group with the capacitance included on the appropriate pin.
     """
     result = cell.liberty
-
-    vdd = settings.primary_power.voltage * settings.units.voltage
-    vss = settings.primary_ground.voltage * settings.units.voltage
 
     # TODO: Make these values configurable
     f_start = 10 @ u_Hz

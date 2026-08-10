@@ -1,27 +1,15 @@
 """Dispatches characterization jobs and manages cell data"""
 
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from pathlib import Path
-from tqdm import tqdm
-
-import matplotlib.pyplot as plt
-
-from charlib.characterizer import utils, plots
+from charlib.characterizer import plots
 from charlib.characterizer.cell import Cell, CellTestConfig
 from charlib.characterizer.units import UnitsSettings
 from charlib.characterizer.procedures import registered_procedures, ProcedureFailedException
 from charlib.liberty.library import Library
-
-import charlib.characterizer.procedures.pin_capacitance.ac_sweep
-import charlib.characterizer.procedures.pin_capacitance.charge_integration
-import charlib.characterizer.procedures.combinational.delay
-import charlib.characterizer.procedures.combinational.leakage_power
-import charlib.characterizer.procedures.sequential.delay
-import charlib.characterizer.procedures.sequential.constraint.metastability.binary_search
-import charlib.characterizer.procedures.sequential.constraint.metastability.c2q_contour
-import charlib.characterizer.procedures.sequential.constraint.recovery
-import charlib.characterizer.procedures.sequential.constraint.removal
-import charlib.characterizer.procedures.sequential.constraint.min_pulse_width
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import dataclass
+import matplotlib.pyplot as plt
+from pathlib import Path
+from tqdm import tqdm
 
 class Characterizer:
     """Main object of Charlib. Keeps track of settings and cells, and schedules simulations."""
@@ -184,54 +172,34 @@ class CharacterizationSettings:
             'output_threshold_pct_fall': self.logic_thresholds.falling,
         }
 
-class SimulationSettings:
-    """Container for simulation backend and procedures"""
-    def __init__(self, **kwargs):
-        self.backend = kwargs.get('backend', 'ngspice-shared')
-        self.input_capacitance = registered_procedures[
-            kwargs.get('input_capacitance_procedure', 'ac_sweep')
-        ]['callable']
-        self.combinational_delay = registered_procedures[
-            kwargs.get('combinational_delay_procedure', 'combinational_worst_case')
-        ]['callable']
-        self.combinational_leakage = registered_procedures[
-            kwargs.get('combinational_leakage_procedure', 'combinational_leakage')
-        ]['callable']
-        self.sequential_delay = registered_procedures[
-            kwargs.get('sequential_delay_procedure', 'sequential_worst_case')
-        ]['callable']
-        self.metastability_constraint = registered_procedures[
-            kwargs.get('setup_hold_constraint_procedure', 'measure_setup_hold_from_contour')
-        ]['callable']
-        self.recovery_constraint = registered_procedures[
-            kwargs.get('recovery_constraint_procedure', 'recovery_constraint')
-        ]['callable']
-        self.removal_constraint = registered_procedures[
-            kwargs.get('removal_constraint_procedure', 'removal_constraint')
-        ]['callable']
-        self.min_pulse_width_constraint = registered_procedures[
-            kwargs.get('min_pulse_width_constraint_procedure', 'min_pulse_width_constraint')
-        ]['callable']
 
+@dataclass
+class SimulationSettings
+    backend: str = 'ngspice-shared'
+    procedures: list[str]
+
+    def __post_init__(self):
+        # If no procedures were given, use all
+        pass # TODO
+
+    @classmethod
+    def known_procedures(cls) -> list[type[Procedure]]:
+        """Return a list of known procedure types"""
+        return [InputCapacitanceFrequencySweep]
+
+
+@dataclass
 class LogicThresholds:
-    """Container for logic_thresholds settings"""
-    def __init__(self, **kwargs):
-        self.low = kwargs.get('low', 0.2)
-        self.high = kwargs.get('high', 0.8)
-        self.rising = kwargs.get('rising', 0.5)
-        self.falling = kwargs.get('falling', 0.5)
+    low: float = 0.2
+    high: float = 0.8
+    rising: float = 0.5
+    falling: float = 0.5
 
-class NamedNode:
-    """Binds supply node names to voltages"""
-    def __init__(self, name, voltage = 0):
-        self.name = name
-        self.voltage = voltage
 
-    def __str__(self) -> str:
-        return f'Name: {self.name}\nVoltage: {self.voltage}'
-
-    def __repr__(self) -> str:
-        return f'NamedNode({self.name}, {self.voltage})'
+@dataclass
+class NamedVoltage:
+    name: str
+    voltage: float
 
     @property
     def subscript(self) -> str:

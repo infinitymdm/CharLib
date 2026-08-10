@@ -15,8 +15,8 @@ class AggregatorNode(SimulationNode):
     def _run_simulation(self, dependency_results: Dict['SimulationNode', SimulationResult]) -> SimulationResult:
         """Aggregate results from dependencies and return single result"""
         measurements = {}
-        for key in set.intersection(*map(set, [i.measurements for i in inputs])
-            measurements[key] = self.aggregate([i.measurements[key] for i in inputs])
+        for key in set.intersection(*map(set, [i.measurements for i in dependency_results.values()])):
+            measurements[key] = self.aggregate([i.measurements[key] for i in dependency_results.values()])
         return SimulationResult(self.variation, measurements, True)
 
 
