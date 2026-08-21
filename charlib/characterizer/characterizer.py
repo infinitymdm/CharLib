@@ -1,15 +1,18 @@
 """Dispatches characterization jobs and manages cell data"""
 
 from charlib.characterizer import plots
-from charlib.characterizer.cell import Cell, CellTestConfig
+from charlib.characterizer.cell import Cell
 from charlib.characterizer.units import UnitsSettings
-from charlib.characterizer.procedures import registered_procedures, ProcedureFailedException
+from charlib.characterizer.procedures import CellConfig, Procedure
+from charlib.orchestrator import Node, Orchestrator
 from charlib.liberty.library import Library
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import matplotlib.pyplot as plt
 from pathlib import Path
-from tqdm import tqdm
+# from tqdm import tqdm
+
+from charlib.characterizer.procedures.pin_capacitance.frequency_sweep import InputCapacitanceFrequencySweep
+
 
 class Characterizer:
     """Main object of Charlib. Keeps track of settings and cells, and schedules simulations."""
@@ -17,7 +20,7 @@ class Characterizer:
     def __init__(self, **kwargs) -> None:
         self.settings = CharacterizationSettings(**kwargs)
         self.library = Library(kwargs.pop('lib_name'), **self.settings.liberty_attrs_as_dict())
-        self.cells = []
+        self.cell_configs = []
 
     def add_cell(self, name: str, properties: dict):
         """Add a cell to be characterized"""
@@ -37,55 +40,24 @@ class Characterizer:
         # Handle keywords for plots
         if properties.get('plots', []) == 'all':
             properties['plots'] = ['delay', 'io']
-        config = CellTestConfig(properties.pop('models'), **properties)
-        self.cells.append((cell, config))
 
-    def analyse_cell(self, cell, config) -> list:
-        """Return a list of callable characterization tasks required for this cell."""
-        simulations = []
+        # Add the cell
+        self.cell_configs.append(CellConfig(cell, self.settings, properties))
 
-        # Measure input pin capacitances
-        simulations += self.settings.simulation.input_capacitance(cell, config, self.settings)
-
-        # Identify which delay and constraint procedures to run based on cell & config
-        if cell.is_sequential:
-            # Find setup & hold constraints (clock-to-q, en-to-q)
-            simulations += self.settings.simulation.metastability_constraint(cell, config, self.settings)
-            # TODO: Find minimum pulse width constraints (set, reset, enable, clock)
-            # Find recovery & removal constraints (clk/en-to-set, clk/en-to-reset)
-            simulations += self.settings.simulation.recovery_constraint(cell, config, self.settings)
-            simulations += self.settings.simulation.removal_constraint(cell, config, self.settings)
-            # Measure sequential propagation and transient delays
-            simulations += self.settings.simulation.sequential_delay(cell, config, self.settings)
-        else:
-            # Measure combinational propagation and transient delays
-            simulations += self.settings.simulation.combinational_delay(cell, config, self.settings)
-            # Measure static leakage power for all input states
-            simulations += self.settings.simulation.combinational_leakage(cell, config, self.settings)
-        return simulations
+    def analyse_cell(self, config: CellConfig) -> set[Node]:
+        """Return characterization tasks for this cell."""
+        procedures = filter(lambda p: p.is_applicable(config), self.settings.simulation.procedures)
+        return set(*[p.generate_dag(config) for p in procedures])
 
     def characterize(self):
         """Execute scheduled simulation jobs in parallel"""
         # Setup: Prepare simulation jobs single-threadedly (is that a word?)
-        simulation_tasks = []
-        for (cell, config) in self.cells:
-            simulation_tasks += self.analyse_cell(cell, config)
-
-        # Run all simulation jobs and merge each resulting liberty cell group into the library
-        with tqdm(bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]',
-                  total=len(simulation_tasks), desc="Characterizing") as progress_bar:
-            with ProcessPoolExecutor(max_workers=self.settings.jobs, max_tasks_per_child=1) as executor:
-                futures = [executor.submit(task, *args) for (task, *args) in simulation_tasks]
-                for future in as_completed(futures):
-                    try:
-                        cell_group = future.result()
-                    except ProcedureFailedException:
-                        if self.settings.omit_on_failure:
-                            continue
-                        else:
-                            raise
-                    self.library.add_group(cell_group)
-                    progress_bar.update(1)
+        nodes = set()
+        for config in self.cell_configs:
+            nodes |= self.analyse_cell(config)
+        orchestrator = Orchestrator(nodes, self.settings.jobs)
+        results = orchestrator.execute()
+        [print(r, v) for r, v, in results.items()]
 
         # Post-processing: Fetch generated table templates and add them to the library
         lut_templates = []
@@ -117,10 +89,11 @@ class CharacterizationSettings:
         """Create a new CharacterizationSettings instance"""
         # Behavioral settings
         self.jobs = None if kwargs.pop('multithreaded', True) else 1
-        self.results_dir = Path(kwargs.pop('results_dir', 'results'))
-        self.plots_dir = self.results_dir / 'plots'
         self.debug = kwargs.pop('debug', False)
         self.debug_dir = Path(kwargs.pop('debug_dir', 'debug'))
+        self.work_dir = Path(kwargs.pop('work_dir', 'work'))
+        self.results_dir = Path(kwargs.pop('results_dir', 'results'))
+        self.plots_dir = self.results_dir / 'plots'
         self.quiet = kwargs.pop('quiet', False)
         self.dry_run = kwargs.pop('dry_run', False)
         self.omit_on_failure = kwargs.get('omit_on_failure', False)
@@ -134,10 +107,10 @@ class CharacterizationSettings:
 
         # Library-wide named voltages
         nodes = kwargs.pop('named_nodes', {})
-        self.primary_power = NamedNode(**nodes.get('primary_power', {'name':'VDD', 'voltage': 3.3}))
-        self.primary_ground = NamedNode(**nodes.get('primary_ground', {'name':'VSS', 'voltage': 0}))
-        self.pwell = NamedNode(**nodes.get('pwell', {'name':'VPW', 'voltage': 0}))
-        self.nwell = NamedNode(**nodes.get('nwell', {'name':'VNW', 'voltage': 3.3}))
+        self.primary_power = NamedVoltage(**nodes.get('primary_power', {'name':'VDD', 'voltage': 3.3}))
+        self.primary_ground = NamedVoltage(**nodes.get('primary_ground', {'name':'VSS', 'voltage': 0}))
+        self.pwell = NamedVoltage(**nodes.get('pwell', {'name':'VPW', 'voltage': 0}))
+        self.nwell = NamedVoltage(**nodes.get('nwell', {'name':'VNW', 'voltage': 3.3}))
 
         # Logic thresholds
         self.logic_thresholds = LogicThresholds(**kwargs.get('logic_thresholds', {}))
@@ -152,7 +125,8 @@ class CharacterizationSettings:
 
     def liberty_attrs_as_dict(self):
         """Return a dict of library-wide settings that should be written to the liberty file."""
-        spice_unit = lambda unit: f'1{unit.prefixed_unit.str_spice()}'
+        def spice_unit(unit):
+            return f'1{unit.prefixed_unit.str_spice()}'
         return {
             'nom_voltage': self.primary_power.voltage,
             'nom_temperature': self.temperature,
@@ -174,18 +148,24 @@ class CharacterizationSettings:
 
 
 @dataclass
-class SimulationSettings
+class SimulationSettings:
     backend: str = 'ngspice-shared'
-    procedures: list[str]
+    procedures: list[str] = field(default_factory=list)
 
     def __post_init__(self):
-        # If no procedures were given, use all
-        pass # TODO
+        # Validate procedures
+        for p in self.procedures:
+            if p not in self.known_procedure_map():
+                raise ValueError(f'Unrecognized procedure {p}')
+        if not self.procedures:
+            self.procedures = list(self.known_procedure_map().values())
 
     @classmethod
-    def known_procedures(cls) -> list[type[Procedure]]:
+    def known_procedure_map(cls) -> dict[str, type[Procedure]]:
         """Return a list of known procedure types"""
-        return [InputCapacitanceFrequencySweep]
+        # TODO: search the current namespace for classes which satisfy issubclass(Procedure)
+        # For now this is a static registry, effectively replacing the old register mechanism
+        return {'InputCapacitanceFrequencySweep': InputCapacitanceFrequencySweep}
 
 
 @dataclass

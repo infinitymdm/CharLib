@@ -1,7 +1,6 @@
 from abc import abstractmethod
 from collections.abc import Iterable
 from charlib.characterizer.procedures import SimulationNode, SimulationResult
-from typing import Dict
 import numpy as np
 
 class AggregatorNode(SimulationNode):
@@ -12,7 +11,7 @@ class AggregatorNode(SimulationNode):
         """Select or aggregate one result from a collection of results"""
         pass
 
-    def _run_simulation(self, dependency_results: Dict['SimulationNode', SimulationResult]) -> SimulationResult:
+    def _run_simulation(self, dependency_results: dict[SimulationNode, SimulationResult]) -> SimulationResult:
         """Aggregate results from dependencies and return single result"""
         measurements = {}
         for key in set.intersection(*map(set, [i.measurements for i in dependency_results.values()])):

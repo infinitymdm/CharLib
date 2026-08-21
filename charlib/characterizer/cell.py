@@ -22,6 +22,7 @@ class Cell:
         The cell initialization process is as follows:
         1. Process cell_config to get the following information about the cell:
             - The path to the cell's netlist.
+            - The cell's transistor models.
             - Functions implemented in this cell (and optionally input and output pin names).
             - Which pins have special roles or are members of differential pairs.
             - The functions of any internal state elements and/or feedback paths.
@@ -36,6 +37,7 @@ class Cell:
         4. Construct a skeleton liberty object for this cell.
         """
         self.name = name
+        self.models = []
         self.pins = {}
         self.diff_pairs = {}
         self.functions = {}
@@ -53,6 +55,20 @@ class Cell:
             self.netlist = Path(netlist)
         else:
             raise TypeError(f'Invalid type for netlist: {type(netlist)}')
+
+        # Validate models
+        for model in cell_config['models']:
+            # Split to path and (optional) section, then validate both
+            filename, *libname = model.split()
+            filename = Path(filename).expanduser() if '~' in filename else Path(filename)
+            if not filename.exists():
+                raise ValueError(f'Unable to locate model at "{filename}"')
+            if len(libname) > 1:
+                raise ValueError(f'Expected 1 libname in model "{model}", got {len(libname)}:' \
+                                 f'{libname}')
+            elif not len(libname) == 1:
+                libname = []
+            self.models.append((filename, *libname))
 
         # Map supplies and special pins to (trigger, inverted, role) tuples
         special_pins = {p.upper(): (Port.Trigger.LEVEL, False, role) for p, role in supply_nodes.items()}
@@ -310,49 +326,3 @@ class Cell:
     @property
     def is_sequential(self) -> bool:
         return any([f.state is not None for f in self.functions.values()])
-
-
-class CellTestConfig:
-    """Capture configuration information for testing one or more cells"""
-
-    def __init__(self, models: list, **parameters):
-        """Construct a new test configuration.
-
-        :param models: Transistor models for the cell under test
-        :param **parameters: Keyword arguments containing lists of test parameters, as described
-                             below:
-            :param data_slews: A list of input data slew rates to test, specified in
-                               settings.units.time units.
-            :param clock_slews: A list of clock slew rates to test specified in settings.units.time
-                               units
-            :param loads: A list of output load capacitances to test, specified in
-                          settings.units.capacitance units
-        """
-        self.models = []
-        for model in models:
-            # Split to path and (optional) section, then validate both
-            filename, *libname = model.split()
-            filename = Path(filename).expanduser() if '~' in filename else Path(filename)
-            if not filename.exists():
-                raise ValueError(f'Unable to locate model at "{filename}"')
-            if len(libname) > 1:
-                raise ValueError(f'Expected 1 libname in model "{model}", got {len(libname)}:' \
-                                 f'{libname}')
-            elif not len(libname) == 1:
-                libname = []
-            self.models.append((filename, *libname))
-        self.parameters = parameters
-
-    def variations(self, *keys):
-        """Generator for test configuration variations
-
-        Yields dictionaries containing key-value pairs for a single combination of parameters. For
-        example: {data_slews: 0.01, loads: 0.025}
-
-        :param *keys: If provided, only return variations of provided parameter names.
-        """
-        parameters = self.parameters if not keys else {k: self.parameters[k] for k in keys}
-        param_names, values = zip(*parameters.items())
-        values = [v if isinstance(v, list) else [v] for v in values]
-        for combination in itertools.product(*values):
-            yield dict(zip(param_names, combination))

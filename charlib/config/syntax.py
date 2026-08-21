@@ -153,6 +153,11 @@ class ConfigFile:
                             'default end time of 1000*data_slew is used.'
             ), default=0
         ): Or(float, int),
+        Optional(Literal('in_cap_start_frequency'), default=1e-5): float,
+        Optional(Literal('in_cap_end_frequency'), default=1e10): float,
+        Optional(Literal('in_cap_shunt_resistance'), default=1e9): float,
+        Optional(Literal('in_cap_current_amplitude'), default=1e-6): float,
+        Optional(Literal('in_cap_selection_criterion'), default='mean'): str,
         Optional(
             Literal(
                 'charge_integration_t_slew',
