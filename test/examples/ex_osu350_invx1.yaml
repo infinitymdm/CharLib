@@ -5,7 +5,7 @@ settings:
         time:               ns
         voltage:            V
         current:            uA
-        pulling_resistance: kOhm
+        pulling_resistance: kΩ
         leakage_power:      nW
         capacitive_load:    pF
         energy:             fJ

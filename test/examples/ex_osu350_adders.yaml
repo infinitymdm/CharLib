@@ -1,7 +1,7 @@
 settings:
     lib_name: osu350_adder_example
     units:
-        pulling_resistance: kOhm # This is the only unit that differs from the defaults
+        pulling_resistance: kiloohm # This is the only unit that differs from the defaults
     named_nodes:
         primary_ground:
             name: GND

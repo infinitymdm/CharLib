@@ -1,9 +1,24 @@
 """This module contains a schema used for configuration files and tools for parsing them."""
 
 import json
-
-from schema import Schema, And, Or, Use, Optional, Literal, Regex
 from enum import Enum
+
+from schema import Literal, Optional, Or, Regex, Schema
+
+TRIGGER_FORMAT = (
+    "``<trigger> <name>``. For edge-sensitive devices, ``trigger`` should be "
+    "``posedge`` or ``negedge``. For level-sensitive devices, ``trigger`` may "
+    "be ``not`` or omitted altogether."
+)
+SI_PREFIX = (
+    "^((yocto|y)|(zepto|z)|(atto|a)|(femto|f)|(pico|p)|(nano|n)|(micro|u)|(milli|m)|"
+    "()|(kilo|k)|(mega|M)|(giga|G)|(tera|T)|(peta|P)(exa|E)|(zetta|Z)|(yotta|Y))"
+)
+
+
+def si_prefixed_syntax(base_unit, prefix_regex=SI_PREFIX):
+    return Schema(Regex(prefix_regex + base_unit))
+
 
 class ConfigFile:
     """Configuration file related functionality."""
@@ -11,506 +26,470 @@ class ConfigFile:
     # TODO: Figure out a better way how to display this in manual, so that
     #       it is not copied to all units, but only referenced
 
-    TRIGGER_FORMAT = '``<trigger> <name>``. For edge-sensitive devices, ``trigger`` should be ' \
-                     '``posedge`` or ``negedge``. For level-sensitive devices, ``trigger`` may ' \
-                     'be ``not`` or omitted altogether.'
-    SI_PREFIX = '^((yocto|y)|(zepto|z)|(atto|a)|(femto|f)|(pico|p)|(nano|n)|(micro|u)|(milli|m)|' \
-                '()|(kilo|k)|(mega|M)|(giga|G)|(tera|T)|(peta|P)(exa|E)|(zetta|Z)|(yotta|Y))'
-    si_prefixed_syntax = lambda base_unit, SI_PREFIX=SI_PREFIX: Schema(Regex(SI_PREFIX + base_unit))
-
-    cell_syntax = Schema({
-        Literal(
-            'netlist',
-            description='The path to the spice file containing the netlist for this cell.'
-        ) : str,
-        Literal(
-            'models',
-            description='A list of paths to the spice models for transistors used in this cell\'s ' \
-                        'netlist. If omitted, CharLib assumes each cell has no dependencies.\n'\
-                        '* Using the syntax ``path/to/file`` will result in ' \
-                        '``.include path/to/file`` in SPICE simulations.\n' \
-                        '* Using the syntax ``path/to/dir`` will allow CharLib to search the ' \
-                        'directory for subcircuits used in a particular cell and include them using '\
-                        '``.include path/to/dir/file``.\n' \
-                        '* Using the syntax ``path/to/file section`` will result in ' \
-                        '``.lib path/to/file section`` in SPICE simulations.'
-        ) : [str],
-        Optional(
+    cell_syntax = Schema(
+        {
+            Literal("netlist", description="The path to the spice file containing the netlist for this cell."): str,
             Literal(
-                'inputs',
-                description='A list of input pin names as they appear in the cell netlist. If ' \
-                            'present, used to verify function inputs.'
-            )
-        ) : [str],
-        Optional(
-            Literal(
-                'outputs',
-                description='A list of output pin names as they appear in the cell netlist. If ' \
-                            'present, used to verify function outputs.'
-            )
-        ) : [str],
-        Literal(
-            'functions',
-            description='A list of Boolean functions describing each output as logical function ' \
-                        'of inputs. Each entry should be in the format ' \
-                        '``<output> = <function>``. For sequential cells, each output should ' \
-                        'be mapped to a state entry. Any inputs and outputs which appear in ' \
-                        'a function must match ports names in the spice subcircuit.' \
-
-        ) : [str],
-        Literal(
-            'data_slews',
-            description='A list of input pin slew rates to characterize. Unit is specified by ' \
-                        '``settings.units.time``.'
-        ) : [Or(float, int)],
-        Optional(
-            Literal(
-                'loads',
-                description='A list of output capacitive loads to characterize. Unit is specified ' \
-                            'by ``settings.units.capacitive_load``.'
-            )
-        ) : [Or(float, int)],
-        Optional(
-            Literal(
-                'area',
-                description='The physical core area occupied by the cell layout. Often given in ' \
-                            'square microns or gate equivalents. See Section 5.1.2 of the ' \
-                            'Liberty User Guide, Vol. 1 for details and examples.'
-            ), default=0.0
-        ) : Or(float, int),
-        Optional(
-            Literal(
-                'clock',
-                description='The clock pin name and trigger type, in the format ' \
-                            f'{TRIGGER_FORMAT} (For example: ``posedge CLK`` or ``negedge CKB``)'
-            )
-        ) : Regex('^(posedge|negedge)[ ]*[a-zA-Z0-9_]+'),
-        Optional(
-            Literal(
-                'enable',
-                description='The enable pin name and trigger type, in the format ' \
-                            f'{TRIGGER_FORMAT} (For example: ``not CLK`` or ``GE``)'
-            )
-        ) : Regex('^(not |())[ ]*[a-zA-Z0-9_]+'),
-        Optional(
-            Literal(
-                'set',
-                description='The name and trigger type of the cell\'s set pin, in  the format ' \
-                            f'{TRIGGER_FORMAT} (for example: ``not SN`` defines an active-low ' \
-                            'synchronous set pin).'
-            )
-        ) : Regex('^(posedge|negedge|not|!|())[ ]*[a-zA-Z0-9_]+'),
-        Optional(
-            Literal(
-                'reset',
-                description='The name and trigger type of the cell\'s reset pin, in the format ' \
-                            '{TRIGGER_FORMAT} (for example: ``negedge RN`` defines an active-low ' \
-                            'asynchronous reset pin).'
-            )
-        ) : Regex('^(posedge|negedge|not|!|())[ ]*[a-zA-Z0-9_]+'),
-        Optional(
-            Literal(
-                'state',
-                description='A list of virtual nodes which encode state in a sequential cell. ' \
-                            'Paths should be specified as ``<internal pin> = <function>``.'
-            )
-        ) : [str],
-        Optional(
-            Literal(
-                'pairs',
-                description='A list of pairs of pins to treat as differential pairs. Pairs must ' \
-                            'be listed in the format ``<noninverting_pin> <inverting_pin>``.'
-            )
-        ) : [str],
-        Optional(
-            Literal(
-                'setup_time_range',
-                description='A list containing the upper and lower bound to be used when ' \
-                            'characterizing setup time.'
-            )
-        ) : [Or(float, int)],
-        Optional(
-            Literal(
-                'hold_time_range',
-                description='A list containing the upper and lower bound to be used when ' \
-                            'characterizing hold time.'
-            )
-        ) : [Or(float, int)],
-        Optional(
-            Literal(
-                'clock_slews',
-                description='A list of clock slew rates to characterize. The cell must have a ' \
-                            'clock pin in order to use this parameter. Unit is specified by ' \
-                            '``settings.units.time``.'
-            )
-        ) : [Or(float, int)],
-        Optional(
-            Literal(
-                'transient_sim_end_time',
-                description='Optional extended end time for transient simulations, specified in ' \
-                            '``settings.units.time`` units. Default 0. This key is not usually ' \
-                            'required except when underdriving cells. When set to 0, the ' \
-                            'default end time of 1000*data_slew is used.'
-            ), default=0
-        ): Or(float, int),
-        Optional(
-            Literal(
-                'charge_integration_t_slew',
-                description='Ramp duration (VSS->VDD or VDD->VSS) used by the ' \
-                            'charge_integration input-capacitance procedure. Shorter ramps ' \
-                            'reduce gate-leakage charge accumulated during integration; ' \
-                            'values in the range 0.01-0.5 work well for sub-100 nm nodes. ' \
-                            'Unit is specified by ``settings.units.time``. Default 0 means ' \
-                            'automatically set to min(data_slews).'
-            ), default=0
-        ) : Or(float, int),
-        Optional(
-            Literal(
-                'charge_integration_t_wait',
-                description='Settling time before and between ramp edges used by the ' \
-                            'charge_integration input-capacitance procedure. Must be long ' \
-                            'enough for the output isolation network (R_on x C_out) to reach ' \
-                            'steady state before the integration ramp begins. ' \
-                            'Unit is specified by ``settings.units.time``. Default 0 means ' \
-                            'automatically set to 1000 x charge_integration_t_slew.'
-            ), default=0
-        ) : Or(float, int),
-        Optional(
-            Literal(
-                'metastability_constraint_search_tolerance',
-                description='Tolerance used during setup/hold constraint search. Unit is ' \
-                            'specified by ``settings.units.time``.'
-            ), default=0.01
-        ) : Or(float, int),
-        Optional(
-            Literal(
-                'metastability_constraint_search_timestep',
-                description='Step size used during setup/hold constraint sweep. Unit is ' \
-                            'specified by ``settings.units.time``.'
-            ), default=0.005
-        ) : Or(float, int),
-        Optional(
-            Literal(
-                'metastability_constraint_load',
-                description='Capacitive load applied to the output during sequential ' \
-                            'characterization. Unit is specified by ``settings.units.capacitive_load``. ' \
-                            'Defaults to 0.1.'
-            ), default=0.1
-        ) : Or(float, int),
-        Optional(
-            Literal(
-                'metastability_constraint_sweep_samples',
-                description='Number of samples per axis in the 2D setup/hold contour sweep ' \
-                            'for sequential cell characterization. Higher values give finer ' \
-                            'resolution at the cost of more simulations. Defaults to 40.'
-            ), default=40
-        ) : int,
-        Optional(
-            Literal(
-                'plots',
-                description='A string (or list of strings) specifying which plot(s) to show ' \
-                            'for this cell.'
-            )
-        ) : Or('all', 'none', 'io', 'delay', [str]),
-    }, description='Keys under a ``cell`` entry may be omitted by instead specifying them in ' \
-                   'under ``settings.cell_defaults``. CharLib automatically merges any ' \
-                   'key-value pairs from ``settings.cell_defaults`` into each cell entry prior ' \
-                   'to characterization.\n' \
-                   'If any key appears under both ``settings.cell_defaults`` and under a cell ' \
-                   'entry, the value in the cell entry overrides the default.')
-
-    settings_syntax = Schema({
-        Optional(
-            Literal(
-                'lib_name',
-                description='The library name for the liberty file. If the filename is not ' \
-                            'specified on the command line with the ``--output`` option, this ' \
-                            'is also used as the filename.'
-            ), default='unnamed_lib'
-        ) : str,
-
-        Optional(
-            Literal(
-                'simulation',
-                description='Specifies which simulation backend to use and which procedures to ' \
-                            'apply for acquiring various types of measurements.'
-            )
-        ) : {
+                "models",
+                description="A list of paths to the spice models for transistors used in this cell's "
+                "netlist. If omitted, CharLib assumes each cell has no dependencies.\n"
+                "* Using the syntax ``path/to/file`` will result in "
+                "``.include path/to/file`` in SPICE simulations.\n"
+                "* Using the syntax ``path/to/dir`` will allow CharLib to search the "
+                "directory for subcircuits used in a particular cell and include them using "
+                "``.include path/to/dir/file``.\n"
+                "* Using the syntax ``path/to/file section`` will result in "
+                "``.lib path/to/file section`` in SPICE simulations.",
+            ): [str],
             Optional(
                 Literal(
-                    'backend',
-                    description='Which PySpice simulator backend to use.\n' \
-                                '* ``ngspice-shared``: Runs ngspice simulations as a shared library within the same process.\n' \
-                                '* ``ngspice-subprocess``: Runs ngspice simulations in separate subprocesses.\n' \
-                                '* ``xyce-serial``: Runs Xyce simulations in serial mode.\n' \
-                                '* ``xyce-parallel``: Runs Xyce simulations in parallel mode.\n' \
-                                '* ``hspice``: (Experimental) Runs HSPICE simulations.'
-                ), default='ngspice-shared'
-            ) : Or('ngspice-shared', 'ngspice-subprocess', 'xyce-serial', 'xyce-parallel', 'hspice'),
-            Optional(
-                Literal(
-                    'input_capacitance_procedure',
-                    description='The name of a procedure used to measure the capacitance of '
-                                'each input pin for each cell. '
-                                'Options: "ac_sweep" (default) or "charge_integration".'
-                ), default='ac_sweep'
-            ) : Or('ac_sweep', 'charge_integration'),
-            Optional(
-                Literal(
-                    'combinational_delay_procedure',
-                    description='The name of a procedure used to measure delays associated with ' \
-                                'a combinational cell.' # TODO: Refer to docs for procedures
-                ), default='combinational_worst_case'
-            ) : str,
-            Optional(
-                Literal(
-                    'combinational_leakage_procedure',
-                    description='The name of a procedure used to measure static leakage power ' \
-                                'for each input state of a combinational cell.' # TODO: Refer to docs for procedures
-                ), default='combinational_leakage'
-            ) : str,
-            Optional(
-                Literal(
-                    'sequential_delay_procedure',
-                    description='The name of a procedure used to measure delays associated with ' \
-                                'a sequential cell.' # TODO: Refer to docs for procedures
-                ), default='sequential_worst_case'
-            ) : str,
-            Optional(
-                Literal(
-                    'setup_hold_constraint_procedure',
-                    description='The name of a procedure used to find the setup & hold time ' \
-                                'constraints associated with a sequential cell.' # TODO: Refer to docs for procedures
-                ), default='measure_setup_hold_from_contour'
-            ) : str,
-            Optional(
-                Literal(
-                    'recovery_constraint_procedure',
-                    description='The name of a procedure used to find the recovery time ' \
-                                'constraint associated with a sequential cell.' # TODO: Refer to docs for procedures
-                ), default='recovery_constraint'
-            ) : str,
-            Optional(
-                Literal(
-                    'removal_constraint_procedure',
-                    description='The name of a procedure used to find the removal time ' \
-                                'constraint associated with a sequential cell.' # TODO: Refer to docs for procedures
-                ), default='removal_constraint'
-            ) : str,
-            Optional(
-                Literal(
-                    'min_pulse_width_constraint_procedure',
-                    description='The name of a procedure used to find the minimum pulse width ' \
-                                'constraints associated with edge-sensitive pins'
-                ), default='min_pulse_width_constraint'
-            ) : str
-        },
-
-        Optional(
-            Literal(
-                'units',
-                description='Specifies physical units to use for input and output values.'
-            )
-        ) : {
-            Optional(
-                Literal(
-                    'time',
-                    description='The unit of time.'
-                ), default='ns'
-            ) : si_prefixed_syntax('(s|seconds|Seconds)'),
-            Optional(
-                Literal(
-                    'voltage',
-                    description='The unit of electrical voltage.'
-                ), default='V'
-            ) : si_prefixed_syntax('(v|V|volts|Volts)'),
-            Optional(
-                Literal(
-                    'current',
-                    description='The unit of electrical current'
-                ), default='uA'
-            ) : si_prefixed_syntax('(a|A|amp|amps|Amp|Amps)'),
-            Optional(
-                Literal(
-                    'capacitive_load',
-                    description='The unit of capacitance'
-                ), default='pF'
-            ) : si_prefixed_syntax('(f|F|farads|Farads)'),
-            Optional(
-                Literal(
-                    'pulling_resistance',
-                    description='The unit of resistance'
-                ), default='Ohm'
-            ) : si_prefixed_syntax('(Ω|ohm|ohms|Ohm|Ohms)'),
-            Optional(
-                Literal(
-                    'leakage_power',
-                    description='The unit of power'
-                ), default='nW'
-            ): si_prefixed_syntax('(w|W|watts|Watts)'),
-            Optional(
-                Literal(
-                    'energy',
-                    description='The unit of energy',
-                ), default='fJ'
-            ): si_prefixed_syntax('(j|J|joules|Joules)')
-        },
-
-        Optional(
-            'named_nodes',
-            description='Important nodes which share the same name and function across all ' \
-                        'cells in the cell library. Use named nodes to specify supply and ' \
-                        'biasing node names and voltages, which produce pg_pin groups in the ' \
-                        'resulting liberty file. See Section 10.1.4 and Table 10-2 in the ' \
-                        'the Liberty User Guide, Vol 1 for more information.'
-        ) : {
-            Optional(
-                Literal(
-                    'primary_power',
-                    description='Library-wide primary power supply node name & voltage.'
+                    "inputs",
+                    description="A list of input pin names as they appear in the cell netlist. If "
+                    "present, used to verify function inputs.",
                 )
-            ) : {
-                Optional('name', default='VDD'): str,
-                Optional('voltage', default=3.3): Or(float, int)
+            ): [str],
+            Optional(
+                Literal(
+                    "outputs",
+                    description="A list of output pin names as they appear in the cell netlist. If "
+                    "present, used to verify function outputs.",
+                )
+            ): [str],
+            Literal(
+                "functions",
+                description="A list of Boolean functions describing each output as logical function "
+                "of inputs. Each entry should be in the format "
+                "``<output> = <function>``. For sequential cells, each output should "
+                "be mapped to a state entry. Any inputs and outputs which appear in "
+                "a function must match ports names in the spice subcircuit.",
+            ): [str],
+            Literal(
+                "data_slews",
+                description="A list of input pin slew rates to characterize. Unit is specified by "
+                "``settings.units.time``.",
+            ): [Or(float, int)],
+            Optional(
+                Literal(
+                    "loads",
+                    description="A list of output capacitive loads to characterize. Unit is specified "
+                    "by ``settings.units.capacitive_load``.",
+                )
+            ): [Or(float, int)],
+            Optional(
+                Literal(
+                    "area",
+                    description="The physical core area occupied by the cell layout. Often given in "
+                    "square microns or gate equivalents. See Section 5.1.2 of the "
+                    "Liberty User Guide, Vol. 1 for details and examples.",
+                ),
+                default=0.0,
+            ): Or(float, int),
+            Optional(
+                Literal(
+                    "clock",
+                    description="The clock pin name and trigger type, in the format "
+                    f"{TRIGGER_FORMAT} (For example: ``posedge CLK`` or ``negedge CKB``)",
+                )
+            ): Regex("^(posedge|negedge)[ ]*[a-zA-Z0-9_]+"),
+            Optional(
+                Literal(
+                    "enable",
+                    description="The enable pin name and trigger type, in the format "
+                    f"{TRIGGER_FORMAT} (For example: ``not CLK`` or ``GE``)",
+                )
+            ): Regex("^(not |())[ ]*[a-zA-Z0-9_]+"),
+            Optional(
+                Literal(
+                    "set",
+                    description="The name and trigger type of the cell's set pin, in  the format "
+                    f"{TRIGGER_FORMAT} (for example: ``not SN`` defines an active-low "
+                    "synchronous set pin).",
+                )
+            ): Regex("^(posedge|negedge|not|!|())[ ]*[a-zA-Z0-9_]+"),
+            Optional(
+                Literal(
+                    "reset",
+                    description="The name and trigger type of the cell's reset pin, in the format "
+                    "{TRIGGER_FORMAT} (for example: ``negedge RN`` defines an active-low "
+                    "asynchronous reset pin).",
+                )
+            ): Regex("^(posedge|negedge|not|!|())[ ]*[a-zA-Z0-9_]+"),
+            Optional(
+                Literal(
+                    "state",
+                    description="A list of virtual nodes which encode state in a sequential cell. "
+                    "Paths should be specified as ``<internal pin> = <function>``.",
+                )
+            ): [str],
+            Optional(
+                Literal(
+                    "pairs",
+                    description="A list of pairs of pins to treat as differential pairs. Pairs must "
+                    "be listed in the format ``<noninverting_pin> <inverting_pin>``.",
+                )
+            ): [str],
+            Optional(
+                Literal(
+                    "setup_time_range",
+                    description="A list containing the upper and lower bound to be used when "
+                    "characterizing setup time.",
+                )
+            ): [Or(float, int)],
+            Optional(
+                Literal(
+                    "hold_time_range",
+                    description="A list containing the upper and lower bound to be used when characterizing hold time.",
+                )
+            ): [Or(float, int)],
+            Optional(
+                Literal(
+                    "clock_slews",
+                    description="A list of clock slew rates to characterize. The cell must have a "
+                    "clock pin in order to use this parameter. Unit is specified by "
+                    "``settings.units.time``.",
+                )
+            ): [Or(float, int)],
+            Optional(
+                Literal(
+                    "transient_sim_end_time",
+                    description="Optional extended end time for transient simulations, specified in "
+                    "``settings.units.time`` units. Default 0. This key is not usually "
+                    "required except when underdriving cells. When set to 0, the "
+                    "default end time of 1000*data_slew is used.",
+                ),
+                default=0,
+            ): Or(float, int),
+            Optional(
+                Literal(
+                    "charge_integration_t_slew",
+                    description="Ramp duration (VSS->VDD or VDD->VSS) used by the "
+                    "charge_integration input-capacitance procedure. Shorter ramps "
+                    "reduce gate-leakage charge accumulated during integration; "
+                    "values in the range 0.01-0.5 work well for sub-100 nm nodes. "
+                    "Unit is specified by ``settings.units.time``. Default 0 means "
+                    "automatically set to min(data_slews).",
+                ),
+                default=0,
+            ): Or(float, int),
+            Optional(
+                Literal(
+                    "charge_integration_t_wait",
+                    description="Settling time before and between ramp edges used by the "
+                    "charge_integration input-capacitance procedure. Must be long "
+                    "enough for the output isolation network (R_on x C_out) to reach "
+                    "steady state before the integration ramp begins. "
+                    "Unit is specified by ``settings.units.time``. Default 0 means "
+                    "automatically set to 1000 x charge_integration_t_slew.",
+                ),
+                default=0,
+            ): Or(float, int),
+            Optional(
+                Literal(
+                    "metastability_constraint_search_tolerance",
+                    description="Tolerance used during setup/hold constraint search. Unit is "
+                    "specified by ``settings.units.time``.",
+                ),
+                default=0.01,
+            ): Or(float, int),
+            Optional(
+                Literal(
+                    "metastability_constraint_search_timestep",
+                    description="Step size used during setup/hold constraint sweep. Unit is "
+                    "specified by ``settings.units.time``.",
+                ),
+                default=0.005,
+            ): Or(float, int),
+            Optional(
+                Literal(
+                    "metastability_constraint_load",
+                    description="Capacitive load applied to the output during sequential "
+                    "characterization. Unit is specified by ``settings.units.capacitive_load``. "
+                    "Defaults to 0.1.",
+                ),
+                default=0.1,
+            ): Or(float, int),
+            Optional(
+                Literal(
+                    "metastability_constraint_sweep_samples",
+                    description="Number of samples per axis in the 2D setup/hold contour sweep "
+                    "for sequential cell characterization. Higher values give finer "
+                    "resolution at the cost of more simulations. Defaults to 40.",
+                ),
+                default=40,
+            ): int,
+            Optional(
+                Literal(
+                    "plots", description="A string (or list of strings) specifying which plot(s) to show for this cell."
+                )
+            ): Or("all", "none", "io", "delay", [str]),
+        },
+        description="Keys under a ``cell`` entry may be omitted by instead specifying them in "
+        "under ``settings.cell_defaults``. CharLib automatically merges any "
+        "key-value pairs from ``settings.cell_defaults`` into each cell entry prior "
+        "to characterization.\n"
+        "If any key appears under both ``settings.cell_defaults`` and under a cell "
+        "entry, the value in the cell entry overrides the default.",
+    )
+
+    settings_syntax = Schema(
+        {
+            Optional(
+                Literal(
+                    "lib_name",
+                    description="The library name for the liberty file. If the filename is not "
+                    "specified on the command line with the ``--output`` option, this "
+                    "is also used as the filename.",
+                ),
+                default="unnamed_lib",
+            ): str,
+            Optional(
+                Literal(
+                    "simulation",
+                    description="Specifies which simulation backend to use and which procedures to "
+                    "apply for acquiring various types of measurements.",
+                )
+            ): {
+                Optional(
+                    Literal(
+                        "backend",
+                        description="Which PySpice simulator backend to use.\n"
+                        "* ``ngspice-shared``: Runs ngspice simulations as a shared library within the same process.\n"
+                        "* ``ngspice-subprocess``: Runs ngspice simulations in separate subprocesses.\n"
+                        "* ``xyce-serial``: Runs Xyce simulations in serial mode.\n"
+                        "* ``xyce-parallel``: Runs Xyce simulations in parallel mode.\n"
+                        "* ``hspice``: (Experimental) Runs HSPICE simulations.",
+                    ),
+                    default="ngspice-shared",
+                ): Or("ngspice-shared", "ngspice-subprocess", "xyce-serial", "xyce-parallel", "hspice"),
+                Optional(
+                    Literal(
+                        "input_capacitance_procedure",
+                        description="The name of a procedure used to measure the capacitance of "
+                        "each input pin for each cell. "
+                        'Options: "ac_sweep" (default) or "charge_integration".',
+                    ),
+                    default="ac_sweep",
+                ): Or("ac_sweep", "charge_integration"),
+                Optional(
+                    Literal(
+                        "combinational_delay_procedure",
+                        description="The name of a procedure used to measure delays associated with "
+                        "a combinational cell.",  # TODO: Refer to docs for procedures
+                    ),
+                    default="combinational_worst_case",
+                ): str,
+                Optional(
+                    Literal(
+                        "combinational_leakage_procedure",
+                        description="The name of a procedure used to measure static leakage power "
+                        "for each input state of a combinational cell.",  # TODO: Refer to docs for procedures
+                    ),
+                    default="combinational_leakage",
+                ): str,
+                Optional(
+                    Literal(
+                        "sequential_delay_procedure",
+                        description="The name of a procedure used to measure delays associated with "
+                        "a sequential cell.",  # TODO: Refer to docs for procedures
+                    ),
+                    default="sequential_worst_case",
+                ): str,
+                Optional(
+                    Literal(
+                        "setup_hold_constraint_procedure",
+                        description="The name of a procedure used to find the setup & hold time "
+                        "constraints associated with a sequential cell.",  # TODO: Refer to docs for procedures
+                    ),
+                    default="measure_setup_hold_from_contour",
+                ): str,
+                Optional(
+                    Literal(
+                        "recovery_constraint_procedure",
+                        description="The name of a procedure used to find the recovery time "
+                        "constraint associated with a sequential cell.",  # TODO: Refer to docs for procedures
+                    ),
+                    default="recovery_constraint",
+                ): str,
+                Optional(
+                    Literal(
+                        "removal_constraint_procedure",
+                        description="The name of a procedure used to find the removal time "
+                        "constraint associated with a sequential cell.",  # TODO: Refer to docs for procedures
+                    ),
+                    default="removal_constraint",
+                ): str,
+                Optional(
+                    Literal(
+                        "min_pulse_width_constraint_procedure",
+                        description="The name of a procedure used to find the minimum pulse width "
+                        "constraints associated with edge-sensitive pins",
+                    ),
+                    default="min_pulse_width_constraint",
+                ): str,
+            },
+            Optional(Literal("units", description="Specifies physical units to use for input and output values.")): {
+                Optional(Literal("time", description="The unit of time."), default="ns"): si_prefixed_syntax(
+                    "(s|seconds|Seconds)"
+                ),
+                Optional(
+                    Literal("voltage", description="The unit of electrical voltage."), default="V"
+                ): si_prefixed_syntax("(v|V|volts|Volts)"),
+                Optional(
+                    Literal("current", description="The unit of electrical current"), default="uA"
+                ): si_prefixed_syntax("(a|A|amp|amps|Amp|Amps)"),
+                Optional(
+                    Literal("capacitive_load", description="The unit of capacitance"), default="pF"
+                ): si_prefixed_syntax("(f|F|farads|Farads)"),
+                Optional(
+                    Literal("pulling_resistance", description="The unit of resistance"), default="ohm"
+                ): si_prefixed_syntax("(Ω|ohm)"),
+                Optional(Literal("leakage_power", description="The unit of power"), default="nW"): si_prefixed_syntax(
+                    "(w|W|watts|Watts)"
+                ),
+                Optional(
+                    Literal(
+                        "energy",
+                        description="The unit of energy",
+                    ),
+                    default="fJ",
+                ): si_prefixed_syntax("(j|J|joules|Joules)"),
+            },
+            Optional(
+                "named_nodes",
+                description="Important nodes which share the same name and function across all "
+                "cells in the cell library. Use named nodes to specify supply and "
+                "biasing node names and voltages, which produce pg_pin groups in the "
+                "resulting liberty file. See Section 10.1.4 and Table 10-2 in the "
+                "the Liberty User Guide, Vol 1 for more information.",
+            ): {
+                Optional(
+                    Literal("primary_power", description="Library-wide primary power supply node name & voltage.")
+                ): {Optional("name", default="VDD"): str, Optional("voltage", default=3.3): Or(float, int)},
+                Optional(Literal("primary_ground", description="Library-wide primary ground node name & voltage.")): {
+                    Optional("name", default="VSS"): str,
+                    Optional("voltage", default=0): Or(float, int),
+                },
+                Optional(Literal("pwell", description="Library-wide p-type biasing node name & voltage")): {
+                    Optional("name", default="VPW"): str,
+                    Optional("voltage", default=0): Or(float, int),
+                },
+                Optional(Literal("nwell", description="Library-wide n-type biasing node name & voltage")): {
+                    Optional("name", default="VNW"): str,
+                    Optional("voltage", default=3.3): Or(float, int),
+                },
             },
             Optional(
                 Literal(
-                    'primary_ground',
-                    description='Library-wide primary ground node name & voltage.'
+                    "logic_thresholds",
+                    description="Voltage thresholds for tuning edge timing. Values are specified as "
+                    "fractions of VDD between 0 and 1. See section 2.3 in the Liberty "
+                    "User Guide, Vol. 1 for more information.",
                 )
-            ) : {
-                Optional('name', default='VSS'): str,
-                Optional('voltage', default=0): Or(float, int)
+            ): {
+                Optional(
+                    Literal(
+                        "low",
+                        description="The fraction of the supply voltage at which a signal is "
+                        "considered logic 0 for timing measurements. See figure 2-2 and "
+                        "sections 2.3.6-7 in the Liberty User Guide, Vol. 1.",
+                    ),
+                    default=0.2,
+                ): Or(float, int),
+                Optional(
+                    Literal(
+                        "high",
+                        description="The fraction of the supply voltage at which a signal is "
+                        "considered logic 1 for timing measurements. See figure 2-2 and "
+                        "sections 2.3.8-9 in the Liberty User Guide, Vol. 1.",
+                    ),
+                    default=0.8,
+                ): Or(float, int),
+                Optional(
+                    Literal(
+                        "falling",
+                        description="The fraction of the supply voltage at which a signal is "
+                        "considered falling for timing measurements. See figure 2-1 and "
+                        "sections 2.3.1 & 2.3.3 in the Liberty User Guide, Vol. 1.",
+                    ),
+                    default=0.5,
+                ): Or(float, int),
+                Optional(
+                    Literal(
+                        "rising",
+                        description="The fraction of the supply voltage at which a signal is "
+                        "considered rising for timing measurements. See figure 2-1 and "
+                        "sections 2.3.2 & 2.3.4 in the Liberty User Guide, Vol. 1.",
+                    ),
+                    default=0.5,
+                ): Or(float, int),
             },
             Optional(
+                Literal("temperature", description="The temperature to use during spice simulations."), default=25
+            ): Or(float, int),
+            Optional(
                 Literal(
-                    'pwell',
-                    description='Library-wide p-type biasing node name & voltage'
+                    "multithreaded",
+                    description="Run simulations in parallel, using as many threads as possible. "
+                    "Using the ``--jobs`` flag on the command line overrides this value.",
+                ),
+                default=True,
+            ): bool,
+            Optional(
+                Literal(
+                    "results_dir",
+                    description="The directory where Charlib exports characterization results. If "
+                    "omitted, CharLib creates a ``results`` directory in the current "
+                    "folder.",
+                ),
+                default="results",
+            ): str,
+            Optional(
+                Literal("debug", description="Display debug messages, and store simulation SPICE files."), default=False
+            ): bool,
+            Optional(
+                Literal(
+                    "debug_dir",
+                    description="The directory where simulation SPICE files are stored if ``debug`` "
+                    "keyword is set to ``True``",
+                ),
+                default="debug",
+            ): str,
+            Optional(
+                Literal(
+                    "dry_run",
+                    description="If true, CharLib will perform all steps except for running SPICE "
+                    " simulations. Equivalent to the ``--no-sim`` command line option.",
+                ),
+                default=False,
+            ): bool,
+            Optional(
+                Literal(
+                    "omit_on_failure",
+                    description="Specifies whether to terminate if a cell fails to characterize "
+                    "(``False``), or continue with the remaining cells (``True``).",
+                ),
+                default=False,
+            ): bool,
+            Optional(
+                Literal(
+                    "cell_defaults",
+                    description="Default values to use for all cells. See the ``cells`` keyword "
+                    "for more information. May contain any key-value pair valid for a "
+                    ":ref:`05_cell_yaml_syntax.json#/` entry.",
                 )
-            ) : {
-                Optional('name', default='VPW'): str,
-                Optional('voltage', default=0): Or(float, int)
-            },
-            Optional(
-                Literal(
-                    'nwell',
-                    description='Library-wide n-type biasing node name & voltage'
-                )
-            ) : {
-                Optional('name', default='VNW'): str,
-                Optional('voltage', default=3.3): Or(float, int)
-            }
+                # Do not pass cell_syntax here to:
+                #   - avoid duplication in documentation
+                #   - have the "required" cell fields easily controllable by schema
+                # "None" can't be placed here since the field does not propagate to documentation
+            ): {},
         },
-        Optional(
-            Literal(
-                'logic_thresholds',
-                description='Voltage thresholds for tuning edge timing. Values are specified as ' \
-                            'fractions of VDD between 0 and 1. See section 2.3 in the Liberty ' \
-                            'User Guide, Vol. 1 for more information.'
-            )
-        ) : {
-            Optional(
-                Literal(
-                    'low',
-                    description='The fraction of the supply voltage at which a signal is ' \
-                                'considered logic 0 for timing measurements. See figure 2-2 and ' \
-                                'sections 2.3.6-7 in the Liberty User Guide, Vol. 1.'
-                ), default=0.2
-            ) : Or(float, int),
-            Optional(
-                Literal(
-                    'high',
-                    description='The fraction of the supply voltage at which a signal is ' \
-                                'considered logic 1 for timing measurements. See figure 2-2 and ' \
-                                'sections 2.3.8-9 in the Liberty User Guide, Vol. 1.'
-                ), default=0.8
-            ) : Or(float, int),
-            Optional(
-                Literal(
-                    'falling',
-                    description='The fraction of the supply voltage at which a signal is ' \
-                                'considered falling for timing measurements. See figure 2-1 and ' \
-                                'sections 2.3.1 & 2.3.3 in the Liberty User Guide, Vol. 1.'
-                ), default=0.5
-            ) : Or(float, int),
-            Optional(
-                Literal(
-                    'rising',
-                    description='The fraction of the supply voltage at which a signal is ' \
-                                'considered rising for timing measurements. See figure 2-1 and ' \
-                                'sections 2.3.2 & 2.3.4 in the Liberty User Guide, Vol. 1.'
-                ), default=0.5
-            ) : Or(float, int)
-        },
-        Optional(
-            Literal(
-                'temperature',
-                description='The temperature to use during spice simulations.'
-            ), default=25
-        ) : Or(float, int),
-        Optional(
-            Literal(
-                'multithreaded',
-                description='Run simulations in parallel, using as many threads as possible. ' \
-                            'Using the ``--jobs`` flag on the command line overrides this value.'
-            ), default=True
-        ) : bool,
-        Optional(
-            Literal(
-                'results_dir',
-                description='The directory where Charlib exports characterization results. If ' \
-                            'omitted, CharLib creates a ``results`` directory in the current ' \
-                            'folder.'
-            ), default='results'
-        ) : str,
-        Optional(
-            Literal(
-                'debug',
-                description='Display debug messages, and store simulation SPICE files.'
-            ), default=False
-        ) : bool,
-        Optional(
-            Literal(
-                'debug_dir',
-                description='The directory where simulation SPICE files are stored if ``debug`` ' \
-                            'keyword is set to ``True``'
-            ), default='debug'
-        ) : str,
-        Optional(
-            Literal(
-                'dry_run',
-                description='If true, CharLib will perform all steps except for running SPICE ' \
-                            ' simulations. Equivalent to the ``--no-sim`` command line option.'
-            ), default=False
-        ) : bool,
-        Optional(
-            Literal(
-                'omit_on_failure',
-                description='Specifies whether to terminate if a cell fails to characterize ' \
-                            '(``False``), or continue with the remaining cells (``True``).'
-            ), default=False
-        ) : bool,
-        Optional(
-            Literal(
-                'cell_defaults',
-                description='Default values to use for all cells. See the ``cells`` keyword ' \
-                            'for more information. May contain any key-value pair valid for a ' \
-                            ':ref:`05_cell_yaml_syntax.json#/` entry.'
-            )
-            # Do not pass cell_syntax here to:
-            #   - avoid duplication in documentation
-            #   - have the "required" cell fields easily controllable by schema
-            # "None" can't be placed here since the field does not propagate to documentation
-        ) : {}
-    }, description='All keywords under ``settings`` are optional. If a keyword is not present, ' \
-                   ' CharLib uses the default value.')
+        description="All keywords under ``settings`` are optional. If a keyword is not present, "
+        " CharLib uses the default value.",
+    )
 
-    config_file_syntax = Schema({
-        Optional("settings") : settings_syntax,
-        Optional("cells") : {
-            Optional(str) : cell_syntax
-        }
-    })
+    config_file_syntax = Schema(
+        {Optional("settings"): settings_syntax, Optional("cells"): {Optional(str): cell_syntax}}
+    )
 
     @classmethod
     def validate(cls, config):
@@ -521,35 +500,36 @@ class ConfigFile:
         # print("Checking configuration syntax")
 
         # Fill "settings" and "cells" if not existent
-        if "settings" not in config or config["settings"] == None:
+        if "settings" not in config or config["settings"] is None:
             config["settings"] = {}
 
-        if "cells" not in config or config["cells"] == None:
+        if "cells" not in config or config["cells"] is None:
             config["cells"] = {}
 
         # Fill default keys under "settings"
         # that have other sub-keys, and no default value in cell_syntax
-        keys = {"units" : {},
-                "named_nodes" : {"primary_power": {}, "primary_ground": {}, "pwell": {}, "nwell": {}},
-                "logic_thresholds" : {},
-                "cell_defaults" : {}}
+        keys = {
+            "units": {},
+            "named_nodes": {"primary_power": {}, "primary_ground": {}, "pwell": {}, "nwell": {}},
+            "logic_thresholds": {},
+            "cell_defaults": {},
+        }
         for k, v in keys.items():
-            if k not in config['settings']:
-                config['settings'][k] = v
+            if k not in config["settings"]:
+                config["settings"][k] = v
 
         # Merge "cell_defaults" to all cells
-        for name, cell in config['cells'].items():
-            for k, v in config['settings']['cell_defaults'].items():
+        for name, cell in config["cells"].items():
+            for k, v in config["settings"]["cell_defaults"].items():
                 if k not in cell:
-                    config['cells'][name][k] = v
-        config['settings'].pop('cell_defaults')
+                    config["cells"][name][k] = v
+        config["settings"].pop("cell_defaults")
 
         # Validate the schema
         return cls.config_file_syntax.validate(config)
 
-
     class SchemaKind(Enum):
-        CELL_SCHEMA     = 0,
+        CELL_SCHEMA = (0,)
         SETTINGS_SCHEMA = 1
 
     @classmethod
@@ -580,8 +560,8 @@ class ConfigFile:
                 elif key == "anyOf":
                     if len(value) == 2:
                         if value[0].get("type") == "number" and value[1].get("type") == "integer":
-                           poplist.append(key)
-                           add_float_or_int = True
+                            poplist.append(key)
+                            add_float_or_int = True
             for p in poplist:
                 j.pop(p)
             if add_float_or_int:
@@ -590,5 +570,5 @@ class ConfigFile:
         traverse_json(j)
         json_schema = json.dumps(j, indent=4)
 
-        with open(path, 'w') as f:
+        with open(path, "w") as f:
             f.write(json_schema)

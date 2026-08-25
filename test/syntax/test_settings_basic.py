@@ -1,8 +1,9 @@
-
-import yaml
 import os
 
+import yaml
+
 from charlib.config.syntax import ConfigFile
+
 
 def test_settings_basic():
     """
@@ -10,10 +11,10 @@ def test_settings_basic():
     """
 
     config_file = os.path.join(os.path.dirname(__file__), "test_settings_basic.yml")
-    with open(config_file, 'r') as f:
+    with open(config_file, "r") as f:
         config = yaml.safe_load(f)
     config = ConfigFile.validate(config)
-    settings = config['settings']
+    settings = config["settings"]
 
     assert settings["lib_name"] == "test_pdk"
 
@@ -21,7 +22,7 @@ def test_settings_basic():
     assert units["time"] == "fs"
     assert units["voltage"] == "mV"
     assert units["current"] == "uA"
-    assert units["pulling_resistance"] == "kOhm"
+    assert units["pulling_resistance"] == "kΩ"
     assert units["leakage_power"] == "pW"
     assert units["capacitive_load"] == "pF"
     assert units["energy"] == "aJ"
@@ -48,8 +49,8 @@ def test_settings_basic():
     assert lt["rising"] == 0.55
     assert lt["falling"] == 0.45
 
-    assert settings["multithreaded"] == False
+    assert not settings["multithreaded"]
     assert settings["results_dir"] == "test_pdk_lib"
-    assert settings["debug"] == True
+    assert settings["debug"]
     assert settings["debug_dir"] == "debug"
-    assert settings["omit_on_failure"] == False
+    assert not settings["omit_on_failure"]
