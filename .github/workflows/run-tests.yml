@@ -1,9 +1,7 @@
 name: Tests
 run-name: ${{ github.actor }} is testing CharLib
 
-on:
-  - push
-  - pull_request
+on: [push, pull_request]
 
 env:
   MOSIS_OSU035_COMMIT_HASH: b36db529c2dff117e1fbead561bf792ec866e1cb
@@ -24,7 +22,7 @@ jobs:
       - name: "Install CharLib"
         run: |
           sudo apt update && sudo apt install -y libngspice0-dev
-          pip install -e .[docs]
+          pip install -e .[tests]
 
       - name: "Run regression tests"
         run: |
