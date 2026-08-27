@@ -1,61 +1,70 @@
 import itertools
+from typing import ClassVar, Final
+
 import numpy as np
 
-import charlib.liberty.liberty as liberty
+from charlib import liberty
+
 
 class Library(liberty.Group):
     """Convenience class for liberty library groups with pre-populated defaults"""
 
     # These must be displayed first if present, and in the order below
-    ordered_attributes = [
-        'technology',
-        'delay_model',
-        'bus_naming_style',
-        'date',
-        'comment',
-        'time_unit',
-        'voltage_unit',
-        'leakage_power_unit',
-        'current_unit',
-        'pulling_resistance_unit',
-        'capacitive_load_unit',
-        'revision',
-        'in_place_swap_mode'
+    ORDERED_ATTRIBUTES: ClassVar[Final[list[str]]] = [
+        "technology",
+        "delay_model",
+        "bus_naming_style",
+        "date",
+        "comment",
+        "time_unit",
+        "voltage_unit",
+        "leakage_power_unit",
+        "current_unit",
+        "pulling_resistance_unit",
+        "capacitive_load_unit",
+        "revision",
+        "in_place_swap_mode",
     ]
-    ordered_groups = [
-        'operating_conditions',
-        'lu_table_template',
-        'cell',
+    ORDERED_GROUPS: ClassVar[Final[list[str]]] = [
+        "operating_conditions",
+        "lu_table_template",
+        "cell",
     ]
 
     def __init__(self, name, **attrs):
         """Construct a library group"""
-        super().__init__('library', name)
-        self.file_name = attrs.pop('filename', f'{name}.lib')
-        self.add_attribute('technology', 'cmos')
-        self.add_attribute('delay_model', 'table_lookup')
-        self.add_attribute('bus_naming_style', '%s-%d')
+        super().__init__("library", name)
+        self.file_name = attrs.pop("filename", f"{name}.lib")
+        self.add_attribute("technology", "cmos")
+        self.add_attribute("delay_model", "table_lookup")
+        self.add_attribute("bus_naming_style", "%s-%d")
 
         # Add nominal operating conditions
-        self.add_attribute('nom_process', 1.0, 2)
-        self.add_attribute('nom_voltage', 3.3, 2) # FIXME: This isn't a sane default. Needs user input
-        self.add_attribute('nom_temperature', 25.0, 2)
+        self.add_attribute("nom_process", 1.0, 2)
+        self.add_attribute("nom_voltage", 3.3, 2)  # FIXME: This isn't a sane default. Needs user input
+        self.add_attribute("nom_temperature", 25.0, 2)
 
         # Override defaults with whatever attrs get passed as kwargs
         [self.add_attribute(attr_name, value, 2) for attr_name, value in attrs.items()]
 
         # Copy nom_* attrs into operating_conditions group
         # TODO: Make op_conditions identifier configurable
-        op_conditions = liberty.Group('operating_conditions', 'typical')
-        op_conditions.add_attribute('process', self.attributes['nom_process'].value, self.attributes['nom_process'].precision)
-        op_conditions.add_attribute('voltage', self.attributes['nom_voltage'].value, self.attributes['nom_voltage'].precision)
-        op_conditions.add_attribute('temperature', self.attributes['nom_temperature'].value, self.attributes['nom_temperature'].precision)
+        op_conditions = liberty.Group("operating_conditions", "typical")
+        op_conditions.add_attribute(
+            "process", self.attributes["nom_process"].value, self.attributes["nom_process"].precision
+        )
+        op_conditions.add_attribute(
+            "voltage", self.attributes["nom_voltage"].value, self.attributes["nom_voltage"].precision
+        )
+        op_conditions.add_attribute(
+            "temperature", self.attributes["nom_temperature"].value, self.attributes["nom_temperature"].precision
+        )
         self.add_group(op_conditions)
 
     @property
     def cells(self) -> list:
         """Return cell groups."""
-        return [group for group in self.groups if group.name == 'cell']
+        return [group for group in self.groups if group.name == "cell"]
 
     def to_liberty(self, **kwargs):
         """Convert this library to a Liberty-format string.
@@ -64,21 +73,21 @@ class Library(liberty.Group):
         """
         # TODO: Rework precision kwarg into a dict of group.name: precision values
         # Library display order is specialized
-        lib_str = [f'{self.name} ({self.identifier}){{']
-        for attr in self.ordered_attributes:
+        lib_str = [f"{self.name} ({self.identifier}){{"]
+        for attr in self.ORDERED_ATTRIBUTES:
             if attr in self.attributes:
                 lib_str += [self.attributes[attr].to_liberty(1, **kwargs)]
         for key, attr in self.attributes.items():
-            if key not in self.ordered_attributes:
+            if key not in self.ORDERED_ATTRIBUTES:
                 lib_str += [attr.to_liberty(1, **kwargs)]
-        for group_name in self.ordered_groups:
+        for group_name in self.ORDERED_GROUPS:
             for group in self.subgroups_with_name(group_name):
-                lib_str += group.to_liberty(1, **kwargs).split('\n')
+                lib_str += group.to_liberty(1, **kwargs).split("\n")
         for group in self.groups.values():
-            if group.name not in self.ordered_groups:
-                lib_str += group.to_liberty(1, **kwargs).split('\n')
-        lib_str += [f'}} /* end {self.name} */']
-        return '\n'.join(lib_str)
+            if group.name not in self.ORDERED_GROUPS:
+                lib_str += group.to_liberty(1, **kwargs).split("\n")
+        lib_str += [f"}} /* end {self.name} */"]
+        return "\n".join(lib_str)
 
 
 class LookupTableTemplate(liberty.Group):
@@ -89,14 +98,14 @@ class LookupTableTemplate(liberty.Group):
     corresponding to one of the variables. Moreover, we don't care about the values in the indices
     as they are overridden by tables using these templates.
     """
+
     def __init__(self, lut_name, **variables):
         """Initialize a lu_table_template group
 
         :param lut_name: The identifier for the lu_table_template group.
         :param **variables: keyword arguments consisting of variable names and integer sizes.
         """
-        super().__init__('lu_table_template', lut_name)
-        index = 1
+        super().__init__("lu_table_template", lut_name)
         self.variables = variables
 
     @property
@@ -107,26 +116,26 @@ class LookupTableTemplate(liberty.Group):
     def to_liberty(self, indent_level=0, **kwargs):
         # LUT template display order is specialized
         indent = liberty.INDENT_STR * indent_level
-        lut_str = [f'{indent}{self.name} ({self.identifier}) {{']
+        lut_str = [f"{indent}{self.name} ({self.identifier}) {{"]
 
         # Construct & display variables
         index = 0
         for variable in self.variables.keys():
             index += 1
-            lut_str += [liberty.Attribute(f'variable_{index}', variable).to_liberty(indent_level+1, **kwargs)]
+            lut_str += [liberty.Attribute(f"variable_{index}", variable).to_liberty(indent_level + 1, **kwargs)]
 
         # Construct & display indices
         index = 0
         for length in self.variables.values():
             index += 1
-            values = ['"'+', '.join([str(1.0+i) for i in range(length)])+'"']
-            lut_str += [liberty.Attribute(f'index_{index}', values).to_liberty(indent_level+1, **kwargs)]
+            values = ['"' + ", ".join([str(1.0 + i) for i in range(length)]) + '"']
+            lut_str += [liberty.Attribute(f"index_{index}", values).to_liberty(indent_level + 1, **kwargs)]
 
         # LUT templates may also have sub-groups, but no attributes
         for group in self.groups.values():
-            lut_str += group.to_liberty(indent_level+1, **kwargs).split('\n')
-        lut_str += [f'{indent}}} /* end {self.name} */']
-        return '\n'.join(lut_str)
+            lut_str += group.to_liberty(indent_level + 1, **kwargs).split("\n")
+        lut_str += [f"{indent}}} /* end {self.name} */"]
+        return "\n".join(lut_str)
 
 
 class LookupTable(liberty.Group):
@@ -175,7 +184,7 @@ class LookupTable(liberty.Group):
             try:
                 indices += [int(np.argwhere(self.index_values[i] == key)[0][0])]
             except IndexError:
-                raise KeyError(f'index_{i+1} contains no such value: {key}')
+                raise KeyError(f"index_{i + 1} contains no such value: {key}")
         return indices
 
     def __getitem__(self, keys):
@@ -188,16 +197,16 @@ class LookupTable(liberty.Group):
 
     def merge(self, other):
         """Merge two LUTs & update templates"""
-        super().merge(other) # This will usually do nothing aside from validating hashes match
+        super().merge(other)  # This will usually do nothing aside from validating hashes match
 
         # Merge LUT templates as long as variable names are the same
         if not self.template.variables.keys() == other.template.variables.keys():
-            raise ValueError('LUT template variable names must match in order to merge!')
+            raise ValueError("LUT template variable names must match in order to merge!")
 
         # Merge LUT variable values
         merged_template_variables = {}
         merged_index_values = []
-        for (i, variable) in zip(range(len(self.index_values)), self.template.variables.keys()):
+        for i, variable in zip(range(len(self.index_values)), self.template.variables.keys()):
             merged = set(self.index_values[i]).union(set(other.index_values[i]))
             merged_index_values.append(np.array(sorted([*merged])))
             merged_template_variables[variable] = len(merged)
@@ -208,11 +217,10 @@ class LookupTable(liberty.Group):
         merged_values = np.zeros(tuple(merged_template_variables.values()))
         self.template.variables = merged_template_variables
         self.index_values = merged_index_values
-        for (index_values, value) in values:
+        for index_values, value in values:
             if not merged_values[*self._get_indices(*index_values)]:
                 merged_values[*self._get_indices(*index_values)] = value
         self.values = merged_values
-
 
     def to_liberty(self, indent_level=0, precision=1, **kwargs):
         # LUT display requires reformatting indices and variables
@@ -220,60 +228,20 @@ class LookupTable(liberty.Group):
         inner_indent = liberty.INDENT_STR * (indent_level + 1)
         value_indent = liberty.INDENT_STR * (indent_level + 2)
 
-        lut_str = [f'{indent}{self.name} ({self.identifier}) {{']
+        lut_str = [f"{indent}{self.name} ({self.identifier}) {{"]
 
         # Display index values
         for i in range(len(self.index_values)):
             index_values = [f"{v:.{precision}f}" for v in self.index_values[i]]
-            lut_str += [f'{inner_indent}index_{i+1} ("{", ".join(index_values)}") ;']
+            lut_str += [f'{inner_indent}index_{i + 1} ("{", ".join(index_values)}") ;']
 
         # Display LUT values
-        lut_str += [f'{inner_indent}values ( \\']
+        lut_str += [f"{inner_indent}values ( \\"]
         sets = 1 if len(self.index_values) < 3 else len(self.index_values[2])
         for s in range(sets):
             for i in range(len(self.index_values[0])):
-                values = [f"{v:.{precision}f}" for v in np.atleast_3d(self.values)[i,:,s]]
+                values = [f"{v:.{precision}f}" for v in np.atleast_3d(self.values)[i, :, s]]
                 lut_str += [f'{value_indent}"{", ".join(values)}" \\']
-        lut_str += [f'{inner_indent}) ;']
-        lut_str += [f'{indent}}} /* end {self.name} */']
-        return '\n'.join(lut_str)
-
-
-if __name__ == "__main__":
-    # Test Library and LUT template classes
-    library = Library('gf180')
-    library.add_attribute('voltage_unit', '1V')
-    lut_template = LookupTableTemplate('delay_template', total_output_net_capacitance=5, input_net_transition=5)
-    library.add_lu_table_template(lut_template)
-
-    # Add a cell with a LUT
-    cell = liberty.Group('cell', 'gf180mcu_osu_sc_gp9t3v3__addf_1')
-    cell.add_group('pin', 'CO')
-    cell.group('pin', 'CO').add_attribute('direction', 'output')
-    cell.group('pin', 'CO').add_attribute('function', 'A&B | CI&(A^B)')
-    cell.group('pin', 'CO').add_group('timing')
-    lut = LookupTable('cell_rise', lut_template,
-                      total_output_net_capacitance=[0.0013, 0.0048, 0.0172, 0.0616, 0.2206],
-                      input_net_transition=[0.0706, 0.1903, 0.5123, 1.3794, 3.714])
-    # Manipulate LUT data
-    lut.values[0,2] = 3
-    lut[0.0013, 0.1903] = 2 # Test setitem
-    lut[0.2206, 3.714] = lut[0.0013, 0.5123] # Test getitem
-    cell.group('pin', 'CO').group('timing').add_group(lut)
-    library.add_group(cell)
-
-    # Test library merge
-    library2 = Library('gf180')
-    library2 += library
-    assert(library.to_liberty() == library2.to_liberty())
-
-    # Test LUT merge
-    lut2 = LookupTable('cell_rise', lut_template.identifier,
-                       total_output_net_capacitance=[0.002],
-                       input_net_transition=[0.0706])
-    lut2[0.002, 0.0706] = 5
-    cell.group('pin', 'CO').group('timing').add_group(lut2)
-    library2.add_group(cell)
-    print(library2.to_liberty(precision=4))
-
-    [print(lut.to_liberty(precision=4)) for lut in library2.subgroups_with_name('timing')]
+        lut_str += [f"{inner_indent}) ;"]
+        lut_str += [f"{indent}}} /* end {self.name} */"]
+        return "\n".join(lut_str)
