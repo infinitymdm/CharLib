@@ -50,6 +50,7 @@ pre-commit = [
 ]
 tests = [
     "pytest>=9.0",
+    "coverage>=7.15",
 ]
 
 [project.urls]
