@@ -4,11 +4,11 @@ import itertools
 import re
 from pathlib import Path
 
+from charlib import liberty
 from charlib.characterizer.logic.evaluators import OPERAND_REGEX
 from charlib.characterizer.logic.functions import Function
 from charlib.characterizer.logic.Parser import parse_logic
 from charlib.characterizer.port import DifferentialPair, Pin, Port
-from charlib.liberty import liberty
 
 
 class Cell:
