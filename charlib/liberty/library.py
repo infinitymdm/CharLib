@@ -1,5 +1,5 @@
 import itertools
-from typing import ClassVar, Final
+from typing import Final
 
 import numpy as np
 
@@ -10,7 +10,7 @@ class Library(liberty.Group):
     """Convenience class for liberty library groups with pre-populated defaults"""
 
     # These must be displayed first if present, and in the order below
-    ORDERED_ATTRIBUTES: ClassVar[Final[list[str]]] = [
+    ORDERED_ATTRIBUTES: Final[list[str]] = [
         "technology",
         "delay_model",
         "bus_naming_style",
@@ -25,7 +25,7 @@ class Library(liberty.Group):
         "revision",
         "in_place_swap_mode",
     ]
-    ORDERED_GROUPS: ClassVar[Final[list[str]]] = [
+    ORDERED_GROUPS: Final[list[str]] = [
         "operating_conditions",
         "lu_table_template",
         "cell",
