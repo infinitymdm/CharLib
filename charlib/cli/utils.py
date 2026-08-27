@@ -109,4 +109,8 @@ def read_cell_configs(cells, quiet=False) -> Iterator[tuple]:
                         print(e)
                         print(f'Skipping "{file!s}": file contains invalid YAML')
                     continue
+        elif isinstance(properties, dict):
+            cell_config = properties
+        else:
+            raise TypeError(f'Config for cell "{name}" must be of type str or dict, got {type(properties).__name__}')
         yield (name, cell_config)
