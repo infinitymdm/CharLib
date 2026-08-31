@@ -1,10 +1,12 @@
 """Maps logic functions to truth tables and test vectors."""
 
-from charlib.characterizer.port import Port
 from charlib.characterizer.logic.evaluators import OPERAND_REGEX, BooleanEvaluator, StateMachineEvaluator
+from charlib.characterizer.port import Direction, Role
+
 
 class Function:
     """Provides function evaluation and mapping faculties"""
+
     def __init__(self, output: str, expression: str, *ports, state=None) -> None:
         """Initialize a new Function
 
@@ -14,12 +16,12 @@ class Function:
         :param state: (optional) The name of the internal state element related to this function.
         """
         # Sanity checks
-        if output.direction is Port.Direction.IN:
-            raise ValueError(f'Port {output.name} is not an output!')
+        if not output.direction == Direction.OUT:
+            raise ValueError(f"Port {output.name} is not an output!")
 
         # Initialize defaults
         self.output_key = output.name
-        self.is_output_inverting = output.is_inverted()
+        self.is_output_inverting = output.is_inverted
         self.expression = expression
         self.state = state
         self.ports = dict()
@@ -34,13 +36,13 @@ class Function:
         operands = set(OPERAND_REGEX.findall(self.expression))
         for port in ports:
             match (bool(state), port.role):
-                case (True, Port.Role.CLOCK):
+                case (True, Role.CLOCK):
                     self.ports[port.name] = self.clock = port
-                case (True, Port.Role.CLEAR):
+                case (True, Role.CLEAR):
                     self.ports[port.name] = self.clear = port
-                case (True, Port.Role.PRESET):
+                case (True, Role.PRESET):
                     self.ports[port.name] = self.preset = port
-                case (True, Port.Role.ENABLE):
+                case (True, Role.ENABLE):
                     self.ports[port.name] = self.enable = port
                 case _:
                     if port.name in operands:
@@ -49,15 +51,19 @@ class Function:
         # Modify the expression based on the presence of clocks and/or enables
         expr = self.expression
         if self.enable:
-            not_en, en = ('', '~') if self.enable.is_inverted() else ('~', '')
-            expr = f'{en}{self.enable.name} & {expr} | {not_en}{self.enable.name} & {self.state}'
+            not_en, en = ("", "~") if self.enable.is_inverted else ("~", "")
+            expr = f"{en}{self.enable.name} & {expr} | {not_en}{self.enable.name} & {self.state}"
         if state:
             if self.clock:
-                not_clk, clk = ('', '~') if self.clock.is_inverted() else ('~', '')
-                expr = f'{clk}{self.clock.name} & {expr} | {not_clk}{self.clock.name} & {self.state}'
-            self.evaluator = StateMachineEvaluator(expr, self.preset, self.clear,
-                                                   preset_state = not self.is_output_inverting,
-                                                   clear_state = self.is_output_inverting)
+                not_clk, clk = ("", "~") if self.clock.is_inverted else ("~", "")
+                expr = f"{clk}{self.clock.name} & {expr} | {not_clk}{self.clock.name} & {self.state}"
+            self.evaluator = StateMachineEvaluator(
+                expr,
+                self.preset,
+                self.clear,
+                preset_state=not self.is_output_inverting,
+                clear_state=self.is_output_inverting,
+            )
         else:
             self.evaluator = BooleanEvaluator(expr)
 
@@ -79,7 +85,7 @@ class Function:
         table = []
         length = len(self.operands)
         for n in range(2**length):
-            result = dict(zip(self.operands, [int(c) for c in f'{n:0{length}b}']))
+            result = dict(zip(self.operands, [int(c) for c in f"{n:0{length}b}"]))
             result[self.output_key] = self.eval(**result)
             table.append(result)
         return table
@@ -91,12 +97,15 @@ class Function:
             result = self.truth_table() == other.truth_table()
         except AttributeError:
             # other is probably not a Function object; assume it's a str expression instead
-            result = self == Function(other) # Recurse
+            result = self == Function(other)  # Recurse
         return result
+
+    def __hash__(self):
+        return hash(self.truth_table())
 
     def __str__(self) -> str:
         """Return str(self)"""
-        return f'{self.output_key} = {self.expression}'
+        return f"{self.output_key} = {self.expression}"
 
     @property
     def test_vectors(self) -> list:
@@ -127,7 +136,7 @@ class Function:
         candidates = []
         table = self.truth_table()
         while table:
-            top_row = table.pop(0) # Get top row of table
+            top_row = table.pop(0)  # Get top row of table
             # Compare to each later row with a differing output
             for compared_row in [cr for cr in table if not cr[self.output_key] == top_row[self.output_key]]:
                 # Check if input differs by only one pin
@@ -136,8 +145,8 @@ class Function:
                     if top_row[pin] == compared_row[pin]:
                         deltas[pin] = str(top_row[pin])
                     else:
-                        deltas[pin] = f'{top_row[pin]}{compared_row[pin]}'
-                if len(''.join(deltas.values())) == len(top_row) + 2:
+                        deltas[pin] = f"{top_row[pin]}{compared_row[pin]}"
+                if len("".join(deltas.values())) == len(top_row) + 2:
                     # Add both the test vector and its reverse
                     candidates.append(deltas)
                     candidates.append({pin: state[::-1] for pin, state in deltas.items()})
@@ -151,9 +160,11 @@ class Function:
             candidates = [c for c in candidates if self._validate_triggers(c)]
             if self.preset and self.clear:
                 # Filter test vectors where set and reset contend
-                active_set = lambda tv: self.preset.is_asserted(tv[self.preset.name])
-                active_reset = lambda tv: self.clear.is_asserted(tv[self.clear.name])
-                candidates = [c for c in candidates if not (active_set(c) and active_reset(c))]
+                candidates = [
+                    c
+                    for c in candidates
+                    if not (self.preset.is_asserted(c[self.preset.name]) and self.clear.is_asserted(c[self.clear.name]))
+                ]
 
         test_vectors = candidates
         self._cached_test_vectors = test_vectors
