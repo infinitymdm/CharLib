@@ -8,7 +8,7 @@ from charlib import liberty
 from charlib.characterizer.logic.evaluators import OPERAND_REGEX
 from charlib.characterizer.logic.functions import Function
 from charlib.characterizer.logic.Parser import parse_logic
-from charlib.characterizer.port import DifferentialPair, Pin, Port
+from charlib.characterizer.port import DifferentialPair, Direction, Pin, Role, Trigger
 
 
 class Cell:
@@ -72,18 +72,18 @@ class Cell:
             self.models.append((filename, *libname))
 
         # Map supplies and special pins to (trigger, inverted, role) tuples
-        special_pins = {p.upper(): (Port.Trigger.LEVEL, False, role) for p, role in supply_nodes.items()}
+        special_pins = {p.upper(): (Trigger.LEVEL, False, role) for p, role in supply_nodes.items()}
         for role in ["clock", "set", "reset", "enable"]:
             if role in cell_config:
                 match cell_config[role].replace("!", "not ").split():
                     case ["posedge", pin]:
-                        special_pins[pin.upper()] = (Port.Trigger.EDGE, False, role)
+                        special_pins[pin.upper()] = (Trigger.EDGE, False, role)
                     case ["negedge", pin]:
-                        special_pins[pin.upper()] = (Port.Trigger.EDGE, True, role)
+                        special_pins[pin.upper()] = (Trigger.EDGE, True, role)
                     case ["not", pin]:
-                        special_pins[pin.upper()] = (Port.Trigger.LEVEL, True, role)
+                        special_pins[pin.upper()] = (Trigger.LEVEL, True, role)
                     case [pin]:
-                        special_pins[pin.upper()] = (Port.Trigger.LEVEL, False, role)
+                        special_pins[pin.upper()] = (Trigger.LEVEL, False, role)
 
         # Identify diff pairs
         diff_pairs = [tuple(pair.split()) for pair in cell_config.get("pairs", [])]
@@ -141,7 +141,10 @@ class Cell:
                 # This pin is a member of a differential pair; find and build the pair
                 [pair] = [p for p in diff_pairs if pin in p]
                 (noninv_pin, inv_pin) = pair
-                self.diff_pairs[pair] = DifferentialPair(noninv_pin, inv_pin, match_direction(pin))
+                self.diff_pairs[pair] = DifferentialPair(
+                    noninv_pin, inverting_name=inv_pin, direction=match_direction(pin)
+                )
+                print(self.diff_pairs[pair])
                 unassigned_pins.remove(pair[pair.index(pin) - 1])
             else:
                 # This is a standard logic pin
@@ -168,16 +171,16 @@ class Cell:
         self.liberty.add_attribute("area", cell_config.get("area", 0.0), 2)
 
         def to_lib_expr(pin):
-            return pin.name + "'" if pin.is_inverted() else pin.name
+            return pin.name + "'" if pin.is_inverted else pin.name
 
-        inverting_pins = {pair.inverting_port_name for pair in self.diff_pairs.values()}
+        inverting_pins = {pair.inverting_name for pair in self.diff_pairs.values()}
         for pin, var in states.items():  # Add storage groups
             # Get variable names
             if pin in inverting_pins:
                 continue  # skip inverting pins
             storage_vars = [var]
             for pair in self.diff_pairs.values():
-                if pin == pair.noninverting_port_name:
+                if pin == pair.name:
                     try:
                         complement_var = states[pair.complement(pin)]
                     except KeyError as e:
@@ -212,9 +215,9 @@ class Cell:
             else:
                 pin_group = liberty.Group("pin", pin.name)
                 pin_group.add_attribute("direction", pin.direction)
-                if pin.direction is Port.Direction.OUT:
+                if pin.direction is Direction.OUT:
                     pin_group.add_attribute("function", str(self.functions[pin.name]))
-                elif pin.role == Port.Role.CLOCK:
+                elif pin.role == Role.CLOCK:
                     pin_group.add_attribute("clock", "true")
             self.liberty.add_group(pin_group)
 

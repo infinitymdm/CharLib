@@ -37,7 +37,7 @@ class Characterizer:
         if properties.get("plots", []) == "all":
             properties["plots"] = ["delay", "io"]
 
-        self.cell_configs.append(CellConfig(cell, self.settings, properties))
+        self.cell_configs.append((cell, self.settings, properties))
 
     def analyse_cell(self, cell) -> list:
         """Return a list of characterization tasks required for this cell."""
@@ -166,10 +166,3 @@ class NamedNode:
     def subscript(self) -> str:
         """Return the 'subscript' portion of the voltage name e.g. Vdd -> dd"""
         return self.name[1:] if self.name.lower().startswith("v") else self.name
-
-
-@dataclass
-class CellConfig:
-    cell: Cell
-    settings: CharacterizationSettings
-    parameters: dict[str, list]
