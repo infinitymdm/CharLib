@@ -3,8 +3,9 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+from pint import UnitRegistry
+
 from charlib.characterizer.cell import Cell
-from charlib.characterizer.units import UnitsSettings
 from charlib.liberty.library import Library
 
 
@@ -37,7 +38,7 @@ class Characterizer:
         if properties.get("plots", []) == "all":
             properties["plots"] = ["delay", "io"]
 
-        self.cell_configs.append((cell, self.settings, properties))
+        self.cell_configs.append((cell, properties))
 
     def analyse_cell(self, cell) -> list:
         """Return a list of characterization tasks required for this cell."""
@@ -137,6 +138,18 @@ class SimulationSettings:
         "sequential_delay_by_c2q_contour",
         "static_leakage_power",
     )
+
+
+class UnitsSettings:
+    def __init__(self, **kwargs) -> None:
+        ureg = UnitRegistry()
+        self.time = ureg.parse_units(kwargs.get("time", "ns"))
+        self.voltage = ureg.parse_units(kwargs.get("voltage", "V"))
+        self.current = ureg.parse_units(kwargs.get("current", "uA"))
+        self.resistance = ureg.parse_units(kwargs.get("pulling_resistance", "Ω"))
+        self.capacitance = ureg.parse_units(kwargs.get("capacitive_load", "pF"))
+        self.power = ureg.parse_units(kwargs.get("leakage_power", "nW"))
+        self.energy = ureg.parse_units(kwargs.get("energy", "fJ"))
 
 
 @dataclass
