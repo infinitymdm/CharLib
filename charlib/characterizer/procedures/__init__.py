@@ -1,5 +1,3 @@
-import re
-
 import pint
 from aiida.engine import WorkChain
 from aiida.orm import Data, Dict, Float, SinglefileData, Str
@@ -21,12 +19,10 @@ class CharacterizationProcedure(WorkChain):
         spec.input("cell.functions", valid_type=Dict, help="Boolean functions for each cell output")
         spec.input("cell.ports", valid_type=Dict, help="Port names and metadata")
 
-        # Simulation
+        # Simulation settings
+        spec.input("settings.model.file", valid_type=SinglefileData, help="Transistor models used in cell netlist")
         spec.input(
-            "settings.simulation.model.file", valid_type=SinglefileData, help="Transistor models used in cell netlist"
-        )
-        spec.input(
-            "settings.simulation.model.lib",
+            "settings.model.lib",
             valid_type=Str,
             required=False,
             help="Which section of the model file to import with a .lib directive",
@@ -66,29 +62,6 @@ class CharacterizationProcedure(WorkChain):
             valid_type=SinglefileData,
             help="A pickled liberty cell group annotated with this procedure's results.",
         )
-
-    def setup_supplies(self, netlist: list[str]):
-        """Set up static named node voltage supplies for this netlist"""
-        named_nodes = self.inputs.settings.named_nodes
-        netlist.extend(
-            [
-                f"Vpower {named_nodes.power.name.value} 0 {named_nodes.power.voltage.value}",
-                f"Vpwell {named_nodes.pwell.name.value} 0 {named_nodes.pwell.voltage.value}",
-                f"Vnwell {named_nodes.nwell.name.value} 0 {named_nodes.nwell.voltage.value}",
-            ]
-        )
-        if self.settings.named_nodes.ground.name.value.lower() not in ["gnd", "0"]:
-            # FIXME: Make sure this check is actually necessary for all simulators
-            netlist.append(f"vground {named_nodes.ground.name.value} 0 {named_nodes.voltage.value}")
-        return netlist
-
-    def get_subckt_line(self):
-        """Read the subckt line for this cell from the cell netlist"""
-        subckt_pattern = re.compile(rf"^\s*\.subckt\s+{re.escape(self.name)}\b", re.IGNORECASE)
-        with self.inputs.cell.netlist.open(mode="r") as cell_netlist:
-            for line in cell_netlist:
-                if subckt_pattern.match(line):
-                    return line
 
 
 class QuantityData(Data):
