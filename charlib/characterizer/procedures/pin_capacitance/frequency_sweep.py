@@ -5,7 +5,8 @@ from charlib.characterizer.procedures import CharacterizationProcedure, Quantity
 class PinCapacitanceFrequencySweepProcedure(CharacterizationProcedure):
     """Measure input capacitance for each input pin using an ac sweep.
 
-    Treat the cell as a grounded capacitor with fixed capacitance. Perform an ac sweep with fixed current amplitude, then evaluate capacitance as d/ds(i(s)/v(s))
+    Treat the cell as a grounded capacitor with fixed capacitance. Perform an ac sweep with fixed current amplitude,
+    then evaluate capacitance as d/ds(i(s)/v(s)).
     """
 
     @classmethod

@@ -1,5 +1,4 @@
 import re
-from abc import abstractmethod
 
 import pint
 from aiida.engine import WorkChain
@@ -18,7 +17,7 @@ class CharacterizationProcedure(WorkChain):
 
         # Cell
         spec.input("cell.name", valid_type=Str, help="Cell name as it appears in the netlist")
-        spec.input("cell.netlist", valid_type=StandardCellData, help="The spice netlist for the cell")
+        spec.input("cell.netlist", valid_type=SinglefileData, help="The spice netlist for the cell")
         spec.input("cell.functions", valid_type=Dict, help="Boolean functions for each cell output")
         spec.input("cell.ports", valid_type=Dict, help="Port names and metadata")
 
@@ -70,18 +69,17 @@ class CharacterizationProcedure(WorkChain):
 
     def setup_supplies(self, netlist: list[str]):
         """Set up static named node voltage supplies for this netlist"""
+        named_nodes = self.inputs.settings.named_nodes
         netlist.extend(
             [
-                f"Vpower {self.inputs.settings.named_nodes.power.name.value} 0 {self.inputs.settings.named_nodes.power.voltage.value}",
-                f"Vpwell {self.inputs.settings.named_nodes.pwell.name.value} 0 {self.inputs.settings.named_nodes.pwell.voltage.value}",
-                f"Vnwell {self.inputs.settings.named_nodes.nwell.name.value} 0 {self.inputs.settings.named_nodes.nwell.voltage.value}",
+                f"Vpower {named_nodes.power.name.value} 0 {named_nodes.power.voltage.value}",
+                f"Vpwell {named_nodes.pwell.name.value} 0 {named_nodes.pwell.voltage.value}",
+                f"Vnwell {named_nodes.nwell.name.value} 0 {named_nodes.nwell.voltage.value}",
             ]
         )
         if self.settings.named_nodes.ground.name.value.lower() not in ["gnd", "0"]:
             # FIXME: Make sure this check is actually necessary for all simulators
-            netlist.append(
-                f"vground {self.inputs.settings.named_nodes.ground.name.value} 0 {self.inputs.settings.named_nodes.voltage.value}"
-            )
+            netlist.append(f"vground {named_nodes.ground.name.value} 0 {named_nodes.voltage.value}")
         return netlist
 
     def get_subckt_line(self):
