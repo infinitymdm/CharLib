@@ -1,6 +1,6 @@
 import pint
 from aiida.engine import WorkChain
-from aiida.orm import Data, Dict, Float, SinglefileData, Str
+from aiida.orm import Code, Data, Dict, Float, SinglefileData, Str
 
 ureg = pint.UnitRegistry()
 
@@ -25,8 +25,9 @@ class CharacterizationProcedure(WorkChain):
             "settings.model.lib",
             valid_type=Str,
             required=False,
-            help="Which section of the model file to import with a .lib directive",
+            help="A section of the model file to import with a .lib directive",
         )
+        spec.input("settings.simulation.engine", valid_type=Code, help="The spice engine used to perform simulations")
         spec.input("settings.simulation.temperature", valid_type=Float)
 
         # Units
