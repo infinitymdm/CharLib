@@ -28,7 +28,7 @@ class CharacterizationProcedure(WorkChain):
             help="A section of the model file to import with a .lib directive",
         )
         spec.input("settings.simulation.engine", valid_type=Code, help="The spice engine used to perform simulations")
-        spec.input("settings.simulation.temperature", valid_type=Float)
+        spec.input("settings.simulation.temperature", valid_type=QuantityData)
 
         # Units
         spec.input("settings.units.time", valid_type=Str)
@@ -47,13 +47,13 @@ class CharacterizationProcedure(WorkChain):
 
         # Named nodes
         spec.input("settings.named_nodes.power.name", valid_type=Str)
-        spec.input("settings.named_nodes.power.voltage", valid_type=Float)
+        spec.input("settings.named_nodes.power.voltage", valid_type=QuantityData)
         spec.input("settings.named_nodes.ground.name", valid_type=Str)
-        spec.input("settings.named_nodes.ground.voltage", valid_type=Float)
+        spec.input("settings.named_nodes.ground.voltage", valid_type=QuantityData)
         spec.input("settings.named_nodes.pwell.name", valid_type=Str)
-        spec.input("settings.named_nodes.pwell.voltage", valid_type=Float)
+        spec.input("settings.named_nodes.pwell.voltage", valid_type=QuantityData)
         spec.input("settings.named_nodes.nwell.name", valid_type=Str)
-        spec.input("settings.named_nodes.nwell.voltage", valid_type=Float)
+        spec.input("settings.named_nodes.nwell.voltage", valid_type=QuantityData)
 
         # Subclasses must define outline
 

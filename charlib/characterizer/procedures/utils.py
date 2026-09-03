@@ -3,7 +3,8 @@ import re
 
 from aiida.common.extendeddicts import AttributeDict
 from aiida.engine import calcfunction
-from aiida.orm import List, SinglefileData, Str
+from aiida.orm import FolderData, List, SinglefileData, Str
+from aiida_spice.utils.include_paths import get_include_paths
 
 logger = logging.getLogger(__name__)
 
@@ -47,3 +48,12 @@ def setup_netlist_supplies(named_nodes: AttributeDict) -> List:
         # FIXME: Make sure this check is actually necessary for all simulators
         netlist.append(f"vground {named_nodes.ground.name.value} 0 {named_nodes.voltage.value}")
     return List(list=netlist)
+
+
+@calcfunction
+def read_includes_from_netlist(netlist: SinglefileData):
+    includes = FolderData()
+    with netlist.as_path() as netlist_path:
+        for include_file in get_include_paths(netlist_path):
+            includes.put_object_from_file(include_file, path=include_file.name)
+    return includes
