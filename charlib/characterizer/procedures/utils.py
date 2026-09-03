@@ -46,7 +46,7 @@ def setup_netlist_supplies(named_nodes: AttributeDict) -> List:
     ]
     if named_nodes.ground.name.value.lower() not in ["gnd", "0"]:
         # FIXME: Make sure this check is actually necessary for all simulators
-        netlist.append(f"vground {named_nodes.ground.name.value} 0 {named_nodes.voltage.value}")
+        netlist.append(f"vground {named_nodes.ground.name.value} 0 {named_nodes.ground.voltage.value}")
     return List(list=netlist)
 
 

@@ -33,6 +33,12 @@ dependencies = [
     "schema>=0.7.8",
 ]
 
+[project.entry-points."aiida.workflows"]
+"charlib.pin_capacitance_impedance_divider" = "charlib.characterizer.procedures.pin_capacitance.frequency_sweep:PinCapacitanceImpedanceDividerProcedure"
+
+[project.entry-points."aiida.data"]
+"charlib.quantity" = "charlib.characterizer.procedures:QuantityData"
+
 [project.scripts]
 charlib = "charlib.cli.main:main"
 
@@ -61,7 +67,11 @@ documentation = "https://stineje.github.io/CharLib/"
 testpaths = [
     "test/syntax",
     "test/logic",
-    "test/examples"
+    "test/examples",
+    "test/characterizer/procedures",
+]
+filterwarnings = [
+    "ignore:Object of type .* not in session, .* operation along .* will not proceed:sqlalchemy.exc.SAWarning",
 ]
 
 [tool.ruff]
