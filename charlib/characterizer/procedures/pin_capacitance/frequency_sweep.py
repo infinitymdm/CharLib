@@ -1,21 +1,21 @@
 import logging
 
+import numpy as np
 from aiida.common.extendeddicts import AttributeDict
-from aiida.engine import ToContext, calcfunction
-from aiida.orm import Dict, Float, FolderData, List, SinglefileData
-from aiida_spice.utils.include_paths import get_include_paths
+from aiida.engine import calcfunction
+from aiida.orm import ArrayData, Dict, List, SinglefileData, Str
 
 from charlib.characterizer.port import Direction, Role
-from charlib.characterizer.procedures import CharacterizationProcedure, QuantityData, utils
+from charlib.characterizer.procedures import CharacterizationProcedure, QuantityData, ureg, utils
 
 logger = logging.getLogger(__name__)
 
 
-class PinCapacitanceFrequencySweepProcedure(CharacterizationProcedure):
-    """Measure input capacitance for each input pin using an ac sweep.
+class PinCapacitanceImpedanceDividerProcedure(CharacterizationProcedure):
+    """Measure input capacitance for each input from the capacitive reactance.
 
-    Treat the cell as a grounded capacitor with fixed capacitance. Perform an ac sweep with fixed current amplitude,
-    then evaluate capacitance as d/ds(i(s)/v(s)).
+    Treat the cell as a grounded capacitor with fixed capacitance. Add a series resistor to the target pin, then apply
+    an AC voltage waveform. Compute the capacitance from an impedance divider with the series resistor.
     """
 
     @classmethod
@@ -23,16 +23,33 @@ class PinCapacitanceFrequencySweepProcedure(CharacterizationProcedure):
         super().define(spec)
 
         # Procedure-specific inputs
-        spec.input("parameters.in_cap.frequency.min", valid_type=QuantityData, help="Minimum sweep frequency")
-        spec.input("parameters.in_cap.frequency.max", valid_type=QuantityData, help="Maximum sweep frequency")
         spec.input(
-            "parameters.in_cap.current",
+            "parameters.in_cap.frequency.min",
             valid_type=QuantityData,
-            help="Constant amplitude for the input current waveform",
+            help="Input AC voltage waveform minimum frequency",
         )
-        spec.input("parameters.in_cap.shunt_resistance", valid_type=QuantityData, help="Shunt resistance for all nodes")
+        spec.input(
+            "parameters.in_cap.frequency.max",
+            valid_type=QuantityData,
+            help="Input AC voltage waveform maximum frequency",
+        )
+        spec.input(
+            "parameters.in_cap.voltage",
+            valid_type=QuantityData,
+            help="Input AC voltage waveform amplitude",
+        )
+        spec.input(
+            "parameters.in_cap.resistance.series",
+            valid_type=QuantityData,
+            help="Resistance placed in series with each pin during measurement",
+        )
+        spec.input(
+            "parameters.in_cap.resistance.shunt",
+            valid_type=QuantityData,
+            help="Shunt resistance applied to all circuit nodes",
+        )
 
-        spec.outline(cls.prepare_netlists, cls.run_spice_simulations, cls.calculate_capacitance, cls.write_liberty)
+        spec.outline(cls.prepare_netlists, cls.run_spice_simulations, cls.write_liberty)
 
     def prepare_netlists(self):
         """Construct spice netlists for downstream simulation"""
@@ -51,10 +68,10 @@ class PinCapacitanceFrequencySweepProcedure(CharacterizationProcedure):
 
     def run_spice_simulations(self):
         """Run all spice simulations"""
-        includes, analyses, options = prepare_spice_input_nodes(
-            next(iter(self.ctx.netlists.values())), self.inputs.parameters, self.inputs.settings.simulation.temperature
-        )
-        simulation_nodes = {}
+        # Includes, analyses, and options are the same for all netlists, just get these once
+        includes = utils.read_includes_from_netlist(next(iter(self.ctx.netlists.values())))
+        analyses = prepare_analyses(self.inputs.parameters.in_cap)
+        options = prepare_options(self.inputs.settings.simulation.temperature, self.inputs.parameters.resistance.shunt)
         for pin, netlist in self.ctx.netlists.items():
             builder = self.inputs.settings.simulation.engine.get_builder()
             builder.netlist = netlist
@@ -62,12 +79,9 @@ class PinCapacitanceFrequencySweepProcedure(CharacterizationProcedure):
             builder.analyses = analyses
             builder.options = options
             builder.metadata.options.resources = {"num_machines": 1, "num_mpiprocs_per_machine": 1}
-            simulation_nodes[pin] = self.submit(builder)
-        return ToContext(**simulation_nodes)
-
-    def calculate_capacitance(self):
-        """Compute capacitance from simulation results"""
-        pass  # TODO
+            key = f"spice.{pin}"
+            future = self.submit(builder)
+            self.to_context(**{key: future})
 
     def write_liberty(self):
         """Create a liberty cell group with capacitance for each input pin"""
@@ -78,12 +92,12 @@ class PinCapacitanceFrequencySweepProcedure(CharacterizationProcedure):
 def prepare_pin_capacitance_netlists(  # noqa: PLR0913 PLR0917
     cell: AttributeDict,
     named_nodes: AttributeDict,
-    current: QuantityData,
+    parameters: AttributeDict,
     includes: List,
     supplies: List,
     ordered_pins: List,
 ) -> SinglefileData:
-    """Set up netlists for measuring each input pin's capacitance with an AC frequency sweep"""
+    """Set up netlists for measuring each input pin's capacitance"""
     ports = cell.ports.get_dict()
 
     # Prepare for subcircuit wire-up, which does not vary with target pin
@@ -107,11 +121,15 @@ def prepare_pin_capacitance_netlists(  # noqa: PLR0913 PLR0917
     # Produce netlists targeting each input pin
     input_ports = [k for k, v in ports.items() if v.get("direction", None) == Direction.IN]
     netlists = {}
+    vstimulus_amplitude = parameters.voltage.quantity.to("volts").magnitude
+    rseries_resistance = parameters.resistance.series.quantity.to("ohms").magnitude
     for target_name in input_ports:
-        netlist = [f".title {cell.name.value}__{target_name}__in_cap__frequency_sweep"]
+        netlist = [f".title {cell.name.value}__port_{target_name}__in_cap__frequency_sweep"]
         netlist.extend(includes.get_list())
         netlist.extend(supplies.get_list())
-        netlist.append(f"Istimulus 0 {target_name} DC 0 AC {current.quantity:~}")
+        netlist.append(f"Vstimulus 0 vstimulus DC 0 AC {vstimulus_amplitude}")
+        netlist.append(f"Rseries vstimulus vtest {rseries_resistance}")
+        netlist.append(f"Valias vtest {target_name} 0")  # 0VDC source for node aliasing
         netlist.append(f"Xdut {*subcircuit_connections} {cell.name.value}")
         # FIXME: Query the database for this node before creating a new one
         netlists[target_name] = SinglefileData.from_string("\n".join(netlist))
@@ -120,20 +138,30 @@ def prepare_pin_capacitance_netlists(  # noqa: PLR0913 PLR0917
 
 
 @calcfunction
-def prepare_spice_input_nodes(netlist: SinglefileData, parameters: AttributeDict, temperature: Float):
-    """Prepare input nodes for spice calculations"""
-    includes = FolderData()
-    with netlist.as_path() as netlist_path:
-        for include_file in get_include_paths(netlist_path):
-            includes.put_object_from_file(include_file, path=include_file.name)
+def prepare_analyses(parameters: AttributeDict) -> List:
+    min_frequency = parameters.frequency.min.quantity.to("Hz").magnitude
+    max_frequency = parameters.frequency.max.quantity.to("Hz").magnitude
+    return List(list=[f".ac dec 10 {min_frequency} {max_frequency}"])
 
-    analyses = List(list=[".ac dec 100 {parameters.in_cap.frequency.min:~} {parameters.in_cap.frequency.max:~}"])
 
-    options = Dict(
+@calcfunction
+def prepare_options(temperature: QuantityData, shunt_resistance) -> Dict:
+    return Dict(
         dict={
-            "temp": temperature,
-            "rshunt": parameters.in_cap.shunt_resistance.quantity.to("ohms").magnitude,
+            "temp": temperature.quantity.to("degC").magnitude,
+            "rshunt": shunt_resistance.quantity.to("ohms").magnitude,
         }
     )
 
-    return includes, analyses, options
+
+@calcfunction
+def calculate_capacitance(parameters: AttributeDict, trace_data: ArrayData, unit: Str):
+    """Compute the capacitance from the capacitive reactance"""
+    vstim = trace_data.get_array("vstimulus") * ureg("volts")
+    vtest = trace_data.get_array("vtest") * ureg("volts")
+    frequency = trace_data.get_array("frequency") * ureg("Hertz")
+    r_series = parameters.resistance.series.quantity
+    impedance = r_series * vtest / (vstim - vtest)
+    capacitive_reactance = -np.imag(impedance)
+    capacitance = 1 / (2 * np.pi * frequency * capacitive_reactance)
+    return QuantityData(capacitance.to(unit))
