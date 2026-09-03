@@ -41,7 +41,7 @@ class PinCapacitanceImpedanceDividerProcedure(CharacterizationProcedure):
         spec.input(
             "parameters.in_cap.resistance.series",
             valid_type=QuantityData,
-            help="Resistance placed in series with each pin during measurement",
+            help="Resistance placed in series with each pin during impedance measurement",
         )
         spec.input(
             "parameters.in_cap.resistance.shunt",
@@ -55,22 +55,22 @@ class PinCapacitanceImpedanceDividerProcedure(CharacterizationProcedure):
         """Construct spice netlists for downstream simulation"""
         model_lib = self.inputs.settings.model.lib if "lib" in self.inputs.settings.model else None
         includes = utils.setup_netlist_includes(self.inputs.cell.netlist, self.inputs.settings.model.file, model_lib)
-        supplies = utils.setup_netlist_supplies(self.inputs.settings.named_nodes)
+        supplies = utils.setup_netlist_supplies(named_nodes=self.inputs.settings.named_nodes)
         ordered_pins = utils.read_pins_in_netlist_order(self.inputs.cell.name, self.inputs.cell.netlist)
         self.ctx.netlists = prepare_pin_capacitance_netlists(
-            self.inputs.cell,
-            self.inputs.settings.named_nodes,
-            self.inputs.parameters.in_cap.current,
-            includes,
-            supplies,
-            ordered_pins,
+            cell=self.inputs.cell,
+            named_nodes=self.inputs.settings.named_nodes,
+            parameters=self.inputs.parameters.in_cap,
+            includes=includes,
+            supplies=supplies,
+            ordered_pins=ordered_pins,
         )
 
     def run_spice_simulations(self):
         """Run all spice simulations"""
         # Includes, analyses, and options are the same for all netlists, just get these once
         includes = utils.read_includes_from_netlist(next(iter(self.ctx.netlists.values())))
-        analyses = prepare_analyses(self.inputs.parameters.in_cap)
+        analyses = prepare_analyses(parameters=self.inputs.parameters.in_cap)
         options = prepare_options(self.inputs.settings.simulation.temperature, self.inputs.parameters.resistance.shunt)
         for pin, netlist in self.ctx.netlists.items():
             builder = self.inputs.settings.simulation.engine.get_builder()
@@ -79,13 +79,21 @@ class PinCapacitanceImpedanceDividerProcedure(CharacterizationProcedure):
             builder.analyses = analyses
             builder.options = options
             builder.metadata.options.resources = {"num_machines": 1, "num_mpiprocs_per_machine": 1}
-            key = f"spice.{pin}"
+            key = f"spice_results.{pin}"
             future = self.submit(builder)
             self.to_context(**{key: future})
 
     def write_liberty(self):
         """Create a liberty cell group with capacitance for each input pin"""
-        pass  # TODO
+        for pin, results in self.ctx.spice_results.items():
+            capacitance = calculate_capacitance(
+                parameters=self.inputs.parameters.in_cap,
+                trace_data=results.trace_data,
+                unit=self.inputs.settings.units.capacitance,
+            )
+            self.logger.warning(f"C: {capacitance.quantity:~}")
+        # FIXME: Actually write a liberty group
+        self.out("liberty", self.inputs.cell.netlist)
 
 
 @calcfunction
@@ -130,7 +138,7 @@ def prepare_pin_capacitance_netlists(  # noqa: PLR0913 PLR0917
         netlist.append(f"Vstimulus 0 vstimulus DC 0 AC {vstimulus_amplitude}")
         netlist.append(f"Rseries vstimulus vtest {rseries_resistance}")
         netlist.append(f"Valias vtest {target_name} 0")  # 0VDC source for node aliasing
-        netlist.append(f"Xdut {*subcircuit_connections} {cell.name.value}")
+        netlist.append(f"Xdut {' '.join(subcircuit_connections)} {cell.name.value}")
         # FIXME: Query the database for this node before creating a new one
         netlists[target_name] = SinglefileData.from_string("\n".join(netlist))
 
@@ -164,4 +172,4 @@ def calculate_capacitance(parameters: AttributeDict, trace_data: ArrayData, unit
     impedance = r_series * vtest / (vstim - vtest)
     capacitive_reactance = -np.imag(impedance)
     capacitance = 1 / (2 * np.pi * frequency * capacitive_reactance)
-    return QuantityData(capacitance.to(unit))
+    return QuantityData(capacitance.to(unit.value))
