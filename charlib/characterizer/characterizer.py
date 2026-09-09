@@ -3,10 +3,12 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from pint import UnitRegistry
+import pint
 
 from charlib.characterizer.cell import Cell
 from charlib.liberty.library import Library
+
+unit_registry = pint.UnitRegistry()
 
 
 class Characterizer:
@@ -142,14 +144,13 @@ class SimulationSettings:
 
 class UnitsSettings:
     def __init__(self, **kwargs) -> None:
-        ureg = UnitRegistry()
-        self.time = ureg.parse_units(kwargs.get("time", "ns"))
-        self.voltage = ureg.parse_units(kwargs.get("voltage", "V"))
-        self.current = ureg.parse_units(kwargs.get("current", "uA"))
-        self.resistance = ureg.parse_units(kwargs.get("pulling_resistance", "Ω"))
-        self.capacitance = ureg.parse_units(kwargs.get("capacitive_load", "pF"))
-        self.power = ureg.parse_units(kwargs.get("leakage_power", "nW"))
-        self.energy = ureg.parse_units(kwargs.get("energy", "fJ"))
+        self.time = unit_registry.parse_units(kwargs.get("time", "ns"))
+        self.voltage = unit_registry.parse_units(kwargs.get("voltage", "V"))
+        self.current = unit_registry.parse_units(kwargs.get("current", "uA"))
+        self.resistance = unit_registry.parse_units(kwargs.get("pulling_resistance", "Ω"))
+        self.capacitance = unit_registry.parse_units(kwargs.get("capacitive_load", "pF"))
+        self.power = unit_registry.parse_units(kwargs.get("leakage_power", "nW"))
+        self.energy = unit_registry.parse_units(kwargs.get("energy", "fJ"))
 
 
 @dataclass
