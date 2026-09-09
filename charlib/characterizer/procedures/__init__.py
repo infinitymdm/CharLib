@@ -1,8 +1,8 @@
-import pint
 from aiida.engine import WorkChain
-from aiida.orm import Code, Data, Dict, Float, SinglefileData, Str
+from aiida.orm import Code, Dict, Float, SinglefileData, Str
 
-ureg = pint.UnitRegistry()
+from charlib.characterizer.procedures import utils
+from charlib.characterizer.procedures.utils import QuantityData
 
 
 class CharacterizationProcedure(WorkChain):
@@ -20,14 +20,14 @@ class CharacterizationProcedure(WorkChain):
         spec.input("cell.ports", valid_type=Dict, help="Port names and metadata")
 
         # Simulation settings
+        spec.input("settings.simulation.engine", valid_type=Code, help="The spice engine used to perform simulations")
         spec.input("settings.model.file", valid_type=SinglefileData, help="Transistor models used in cell netlist")
         spec.input(
             "settings.model.lib",
             valid_type=Str,
             required=False,
-            help="A section of the model file to import with a .lib directive",
+            help="The section of the model file to import with a .lib directive",
         )
-        spec.input("settings.simulation.engine", valid_type=Code, help="The spice engine used to perform simulations")
         spec.input("settings.simulation.temperature", valid_type=QuantityData)
 
         # Units
@@ -64,25 +64,17 @@ class CharacterizationProcedure(WorkChain):
             help="A pickled liberty cell group annotated with this procedure's results.",
         )
 
+    def setup_initial_netlist(self):
+        """Perform common netlist setup tasks.
 
-class QuantityData(Data):
-    """AiiDA custom data node storing physical quantities with units."""
-
-    def __init__(self, quantity=None, **kwargs):
-        super().__init__(**kwargs)
-        if quantity is not None:
-            self.set_quantity(quantity)
-
-    def set_quantity(self, quantity):
-        """Save magnitude and unit as attributes."""
-        if not isinstance(quantity, ureg.Quantity):
-            raise TypeError("Input must be a pint.Quantity object.")
-        self.base.attributes.set("value", quantity.magnitude)
-        self.base.attributes.set("units", str(quantity.units))
-
-    @property
-    def quantity(self):
-        """Reconstruct and return the pint.Quantity object."""
-        value = self.base.attributes.get("value")
-        units = self.base.attributes.get("units")
-        return value * ureg(units)
+        This routine performs the following steps and places the resulting List entry in self.ctx.initial_netlist:
+        1. Initilize voltage supplies from settings.named_nodes
+        """
+        named_nodes = self.inputs.settings.named_nodes
+        supplies = [
+            utils.create_vpower(named_nodes.power.name, named_nodes.power.voltage),
+            utils.create_vground(named_nodes.ground.name, named_nodes.ground.voltage),
+            utils.create_vpwell(named_nodes.pwell.name, named_nodes.pwell.voltage),
+            utils.create_vnwell(named_nodes.nwell.name, named_nodes.nwell.voltage),
+        ]
+        self.ctx.initial_netlist = utils.combine_lists(*supplies)
