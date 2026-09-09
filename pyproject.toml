@@ -24,7 +24,7 @@ classifiers = [
 keywords = [ "VLSI", "EDA"]
 requires-python = ">=3.12,<4.0"
 dependencies = [
-    "aiida-spice==0.2.0a0",
+    "aiida-spice>=0.2.0a0",
     "liberty-parser>=0.0.29",
     "matplotlib>=3.10.9",
     "numpy>=2.4.6",
@@ -37,7 +37,7 @@ dependencies = [
 "charlib.pin_capacitance_impedance_divider" = "charlib.characterizer.procedures.pin_capacitance.frequency_sweep:PinCapacitanceImpedanceDividerProcedure"
 
 [project.entry-points."aiida.data"]
-"charlib.quantity" = "charlib.characterizer.procedures:QuantityData"
+"charlib.quantity" = "charlib.characterizer.procedures.utils:QuantityData"
 
 [project.scripts]
 charlib = "charlib.cli.main:main"

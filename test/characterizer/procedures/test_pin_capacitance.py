@@ -2,9 +2,10 @@ from aiida import load_profile
 from aiida.engine import run
 from aiida.orm import Dict, Float, SinglefileData, Str, load_code
 
+from charlib.characterizer.characterizer import unit_registry
 from charlib.characterizer.port import Direction, Role, Trigger
-from charlib.characterizer.procedures import QuantityData, ureg
 from charlib.characterizer.procedures.pin_capacitance.frequency_sweep import PinCapacitanceImpedanceDividerProcedure
+from charlib.characterizer.procedures.utils import QuantityData
 
 
 def test_pin_cap_impedance_divider():
@@ -41,6 +42,11 @@ def test_pin_cap_impedance_divider():
                         "direction": Direction.IN,
                         "trigger": Trigger.LEVEL,
                     },
+                    "VGND": {
+                        "role": Role.GROUND,
+                        "direction": Direction.IN,
+                        "trigger": Trigger.LEVEL,
+                    },
                 }
             ),
         },
@@ -48,7 +54,10 @@ def test_pin_cap_impedance_divider():
             "model": {
                 "file": test_model,
             },
-            "simulation": {"engine": spice_code, "temperature": QuantityData(ureg.Quantity(25, ureg.degC))},
+            "simulation": {
+                "engine": spice_code,
+                "temperature": QuantityData(unit_registry.Quantity(25, unit_registry.degC)),
+            },
             "units": {
                 "time": Str("s"),
                 "voltage": Str("V"),
@@ -67,34 +76,35 @@ def test_pin_cap_impedance_divider():
             "named_nodes": {
                 "power": {
                     "name": Str("VDD"),
-                    "voltage": QuantityData(3 * ureg.volt),
+                    "voltage": QuantityData(3 * unit_registry.volt),
                 },
                 "ground": {
                     "name": Str("VGND"),
-                    "voltage": QuantityData(0 * ureg.volt),
+                    "voltage": QuantityData(0 * unit_registry.volt),
                 },
                 "nwell": {
                     "name": Str("VNW"),
-                    "voltage": QuantityData(3 * ureg.volt),
+                    "voltage": QuantityData(3 * unit_registry.volt),
                 },
                 "pwell": {
                     "name": Str("VPW"),
-                    "voltage": QuantityData(0 * ureg.volt),
+                    "voltage": QuantityData(0 * unit_registry.volt),
                 },
             },
         },
         "parameters": {
             "in_cap": {
                 "frequency": {
-                    "min": QuantityData(10 * ureg.Hz),
-                    "max": QuantityData(1e9 * ureg.Hz),
+                    "min": QuantityData(10 * unit_registry.Hz),
+                    "max": QuantityData(1e9 * unit_registry.Hz),
                 },
-                "voltage": QuantityData(2 * ureg.volt),
+                "voltage": QuantityData(2 * unit_registry.volt),
                 "resistance": {
-                    "series": QuantityData(1e3 * ureg.ohm),
-                    "shunt": QuantityData(1e10 * ureg.ohm),
+                    "series": QuantityData(1e3 * unit_registry.ohm),
+                    "shunt": QuantityData(1e10 * unit_registry.ohm),
                 },
             },
         },
     }
     results = run(PinCapacitanceImpedanceDividerProcedure, **inputs)
+    assert results["trace_data"] is not None
