@@ -1,6 +1,10 @@
+import hashlib
+import pickle
+from pathlib import Path
+
 from aiida import load_profile
 from aiida.engine import run
-from aiida.orm import Dict, Float, SinglefileData, Str, load_code
+from aiida.orm import Dict, Str, load_code
 
 from charlib.characterizer.characterizer import unit_registry
 from charlib.characterizer.port import Direction, Role, Trigger
@@ -12,19 +16,18 @@ def test_pin_cap_impedance_divider():
     """Test the PinCapacitanceImpedanceDividerProcedure workchain with a known-capacitance example"""
     load_profile()
     spice_code = load_code(label="ngspice@localhost")
-    test_circuit = SinglefileData.from_string(
-        """
-        .subckt rc_circuit IN VGND OUT
-        R0 IN OUT 10
-        C0 IN VGND 100p
-        .ends"""
-    )
-    test_model = SinglefileData.from_string("* model with no content")
+    cell_path = Path.cwd() / "test/characterizer/procedures/rc_circuit.spice"
+    with open(cell_path, "rb") as f:
+        digest = hashlib.file_digest(f, "sha3_256")
+    cell_hash = digest.hexdigest()
 
     inputs = {
         "cell": {
-            "name": Str("rc_circuit"),
-            "netlist": test_circuit,
+            "name": "rc_circuit",
+            "netlist": {
+                "path": Str(cell_path),
+                "hash": Str(cell_hash),
+            },
             "functions": Dict(
                 dict={
                     "OUT": "IN",
@@ -51,43 +54,40 @@ def test_pin_cap_impedance_divider():
             ),
         },
         "settings": {
-            "model": {
-                "file": test_model,
-            },
             "simulation": {
                 "engine": spice_code,
                 "temperature": QuantityData(unit_registry.Quantity(25, unit_registry.degC)),
             },
             "units": {
-                "time": Str("s"),
-                "voltage": Str("V"),
-                "current": Str("mA"),
-                "resistance": Str("ohm"),
-                "capacitance": Str("pF"),
-                "power": Str("nW"),
-                "energy": Str("J"),
+                "time": "s",
+                "voltage": "V",
+                "current": "mA",
+                "resistance": "ohm",
+                "capacitance": "pF",
+                "power": "nW",
+                "energy": "J",
             },
             "logic_thresholds": {
-                "high": Float(0.8),
-                "low": Float(0.2),
-                "rise": Float(0.5),
-                "fall": Float(0.5),
+                "high": 0.8,
+                "low": 0.2,
+                "rise": 0.5,
+                "fall": 0.5,
             },
             "named_nodes": {
                 "power": {
-                    "name": Str("VDD"),
+                    "name": "VDD",
                     "voltage": QuantityData(3 * unit_registry.volt),
                 },
                 "ground": {
-                    "name": Str("VGND"),
+                    "name": "VGND",
                     "voltage": QuantityData(0 * unit_registry.volt),
                 },
                 "nwell": {
-                    "name": Str("VNW"),
+                    "name": "VNW",
                     "voltage": QuantityData(3 * unit_registry.volt),
                 },
                 "pwell": {
-                    "name": Str("VPW"),
+                    "name": "VPW",
                     "voltage": QuantityData(0 * unit_registry.volt),
                 },
             },
@@ -95,7 +95,7 @@ def test_pin_cap_impedance_divider():
         "parameters": {
             "in_cap": {
                 "frequency": {
-                    "min": QuantityData(10 * unit_registry.Hz),
+                    "min": QuantityData(1e4 * unit_registry.Hz),
                     "max": QuantityData(1e9 * unit_registry.Hz),
                 },
                 "voltage": QuantityData(2 * unit_registry.volt),
@@ -106,5 +106,14 @@ def test_pin_cap_impedance_divider():
             },
         },
     }
+
     results = run(PinCapacitanceImpedanceDividerProcedure, **inputs)
-    assert results["trace_data"] is not None
+    assert results["liberty"] is not None
+
+    with results["liberty"].open(mode="rb") as stream:
+        cell_group = pickle.load(stream)
+
+    print(cell_group.to_liberty(precision=6))
+    assert cell_group is not None
+
+    assert abs(cell_group.group("pin", "IN").attributes["capacitance"].value - 100) < 1e-6

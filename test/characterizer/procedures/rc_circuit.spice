@@ -1,0 +1,4 @@
+.subckt rc_circuit IN VGND OUT
+R0 IN OUT 10
+C0 IN VGND 100p
+.ends
