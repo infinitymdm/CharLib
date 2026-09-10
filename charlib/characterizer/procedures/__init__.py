@@ -1,3 +1,6 @@
+import hashlib
+from pathlib import Path
+
 from aiida.engine import WorkChain
 from aiida.orm import Code, Dict, Float, SinglefileData, Str
 
@@ -21,12 +24,15 @@ class CharacterizationProcedure(WorkChain):
 
         # Simulation settings
         spec.input("settings.simulation.engine", valid_type=Code, help="The spice engine used to perform simulations")
-        spec.input("settings.model.file", valid_type=SinglefileData, help="Transistor models used in cell netlist")
-        spec.input(
-            "settings.model.lib",
-            valid_type=Str,
+        spec.input_namespace(
+            "settings.models",
+            dynamic=True,
             required=False,
-            help="The section of the model file to import with a .lib directive",
+            validator=validate_models,
+            help=(
+                "Device models imported with .lib or .include directives. These are typically PDK-defined transistor "
+                "models used in cell subcircuit definitions."
+            ),
         )
         spec.input("settings.simulation.temperature", valid_type=QuantityData)
 
@@ -68,8 +74,12 @@ class CharacterizationProcedure(WorkChain):
         """Perform common netlist setup tasks.
 
         This routine performs the following steps and places the resulting List entry in self.ctx.initial_netlist:
-        1. Initilize voltage supplies from settings.named_nodes
+        1. Add include/lib statements for each model
+        2. Initilize voltage supplies from settings.named_nodes
         """
+        # Add model imports
+
+        # Build voltage supplies
         named_nodes = self.inputs.settings.named_nodes
         supplies = [
             utils.create_vpower(named_nodes.power.name, named_nodes.power.voltage),
@@ -78,3 +88,52 @@ class CharacterizationProcedure(WorkChain):
             utils.create_vnwell(named_nodes.nwell.name, named_nodes.nwell.voltage),
         ]
         self.ctx.initial_netlist = utils.combine_lists(*supplies)
+
+
+def validate_models(value, port):  # noqa: PLR0911
+    """Validate inputs to the models namespace.
+
+    Each valid models entry has the following items:
+    - 'path': a valid path Str which points to an extant file
+    - 'hash': a Str which matches the hexadecimal hash of the file at 'path'
+    - 'hash_algorithm': an optional Str specifying hash algorithm used to generate 'hash'. Defaults to sha3_256.
+    - 'section': an optional Str. If provided, imports use ".lib <path> <section>."; otherwise ".inc <path>".
+    """
+    for label, group in value.items():
+        # Check that path exists
+        if "path" not in group:
+            return f"Missing required input 'path' under 'settings.models.{label}'."
+        if not isinstance(group["path"], Str):
+            return f"'settings.models.{label}.path' must be of type Str, got {type(group['path']).__name__}."
+        path = Path(group["path"].value).resolve()
+        if not path.is_file():
+            return f"'settings.models.{label}.path' does not contain a path to an extant file."
+
+        # Check that hash is correct
+        if "hash" not in group:
+            return f"Missing required input 'hash' under 'settings.models.{label}'."
+        if not isinstance(group["hash"], Str):
+            return f"'settings.models.{label}.hash' must be of type Str, got {type(group['hash']).__name__}."
+        if "hash_algorithm" in group:
+            if not isinstance(group["hash_algorithm"], Str):
+                return (
+                    f"'settings.models.{label}.hash_algorithm' must by of type Str, got "
+                    f"{type(group['hash_algorithm']).__name__}."
+                )
+            hash_algorithm = group["hash_algorithm"].value
+        else:
+            hash_algorithm = "sha3_256"
+        if hash_algorithm not in hashlib.algorithms_guaranteed:
+            return (
+                f"'settings.models.{label}.hash_algorithm' must be a hash type which appears in "
+                "hashlib.algorithms_guaranteed."
+            )
+        with open(path, "rb") as f:
+            digest = hashlib.file_digest(f, hash_algorithm)
+        if not group["hash"].value == digest.hexdigest():
+            return f"'settings.models.{label}.hash' does not match {hash_algorithm} digest of file {path!s}."
+
+        # If section is present, validate type
+        if "section" in group:
+            if not isinstance(group["section"], Str):
+                return f"'settings.models.{label}.section' must be of type Str, got {type(group['section']).__name}."
