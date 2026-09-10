@@ -1,13 +1,15 @@
+import io
 import logging
+import pickle
 
 import numpy as np
-from aiida.common.extendeddicts import AttributeDict
 from aiida.engine import calcfunction
 from aiida.orm import ArrayData, Dict, List, SinglefileData, Str
 from aiida_spice.calculations import parse_includes
 
+from charlib import liberty
 from charlib.characterizer.characterizer import unit_registry
-from charlib.characterizer.port import Direction
+from charlib.characterizer.port import Role
 from charlib.characterizer.procedures import CharacterizationProcedure, utils
 from charlib.characterizer.procedures.utils import QuantityData
 
@@ -58,7 +60,7 @@ class PinCapacitanceImpedanceDividerProcedure(CharacterizationProcedure):
 
     def prepare_simulation_netlists(self):
         """Construct spice netlists for downstream simulation"""
-        ordered_pins = utils.read_pins_in_netlist_order(self.inputs.cell.name, self.inputs.cell.netlist)
+        ordered_pins = utils.read_pins_in_netlist_order(self.inputs.cell.name, self.inputs.cell.netlist.path)
         named_nodes = self.inputs.settings.named_nodes
         subckt_connections = utils.create_generic_subcircuit_connections(
             self.inputs.cell.ports,
@@ -81,8 +83,12 @@ class PinCapacitanceImpedanceDividerProcedure(CharacterizationProcedure):
         """Run all spice simulations"""
         # Includes, analyses, and options are the same for all netlists, just get these once
         includes = parse_includes(next(iter(self.ctx.netlists.values())))
-        analyses = prepare_analyses(parameters=self.inputs.parameters.in_cap)
-        options = prepare_options(self.inputs.settings.simulation.temperature, self.inputs.parameters.resistance.shunt)
+        analyses = prepare_analyses(
+            self.inputs.parameters.in_cap.frequency.min, self.inputs.parameters.in_cap.frequency.max
+        )
+        options = prepare_options(
+            self.inputs.settings.simulation.temperature, self.inputs.parameters.in_cap.resistance.shunt
+        )
 
         # Submit a simulation job for each netlist
         for pin, netlist in self.ctx.netlists.items():
@@ -98,33 +104,37 @@ class PinCapacitanceImpedanceDividerProcedure(CharacterizationProcedure):
 
     def write_liberty(self):
         """Create a liberty cell group with capacitance for each input pin"""
-        for pin, results in self.ctx.spice_results.items():
-            capacitance = calculate_capacitance(
-                parameters=self.inputs.parameters.in_cap,
-                trace_data=results.trace_data,
-                unit=self.inputs.settings.units.capacitance,
+        capacitances = {}
+        for pin, sim_node in self.ctx.spice_results.items():
+            capacitances[pin] = calculate_capacitance(
+                self.inputs.parameters.in_cap.resistance.series,
+                sim_node.outputs.trace_data,
+                self.inputs.settings.units.capacitance,
             )
-            self.logger.warning(f"C: {capacitance.quantity:~}")
-        # FIXME: Actually write a liberty group
-        self.out("liberty", self.inputs.cell.netlist)
+        libfile = create_liberty_group(self.inputs.cell.name, **capacitances)
+        self.out("liberty", libfile)
 
 
 @calcfunction
 def create_stimulus_netlists(
     netlist_header: List, ports: Dict, stimulus_voltage: QuantityData, series_resistance: QuantityData
 ) -> SinglefileData:
-    """For each input pin, set up a netlist with AC input stimulus and a known real impedance on the input pin"""
-    input_pins = [k for k, v in ports.get_dict().items() if v.get("direction", None) == Direction.IN]
+    """For each non-power pin, set up a netlist with AC input stimulus and a known real impedance on the pin"""
+    target_pins = []
+    for name, port in ports.get_dict().items():
+        if port.get("role", None) in [Role.POWER, Role.GROUND, Role.PWELL, Role.NWELL]:
+            continue
+        target_pins.append(name)
     netlists = {}
     vstimulus = stimulus_voltage.quantity.to("volts").magnitude
     rseries = series_resistance.quantity.to("ohms").magnitude
-    for target_pin in input_pins:
+    for target_pin in target_pins:
         netlist = [f".title {target_pin} input capacitance impedance divider"]
         netlist.extend(netlist_header.get_list())
         netlist.append(utils.voltage_supply("stimulus", f"DC 0 AC {vstimulus}"))
         netlist.append(utils.resistor("series", rseries, "test", "stimulus"))
         netlist.append(utils.voltage_supply("alias", 0, "test", target_pin))  # 0VDC source for node aliasing
-        netlists[target_pin] = SinglefileData.from_string("\n".join(netlist))
+        netlists[target_pin] = SinglefileData.from_string("\n".join(netlist), filename=f"netlist_{target_pin}.spice")
     return netlists
 
 
@@ -146,13 +156,26 @@ def prepare_options(temperature: QuantityData, shunt_resistance: QuantityData) -
 
 
 @calcfunction
-def calculate_capacitance(parameters: AttributeDict, trace_data: ArrayData, unit: Str):
-    """Compute the capacitance from the capacitive reactance"""
-    vstim = trace_data.get_array("stimulus") * unit_registry("volts")
-    vtest = trace_data.get_array("test") * unit_registry("volts")
+def calculate_capacitance(series_resistance: QuantityData, trace_data: ArrayData, unit: Str):
+    vstim = trace_data.get_array("v_stimulus") * unit_registry("volts")
+    vtest = trace_data.get_array("v_test") * unit_registry("volts")
     frequency = trace_data.get_array("frequency") * unit_registry("Hz")
-    r_series = parameters.resistance.series.quantity
+    r_series = series_resistance.quantity
     impedance = r_series * vtest / (vstim - vtest)
-    capacitive_reactance = -np.imag(impedance)
+    capacitive_reactance = -np.imag(impedance.magnitude) * impedance.units
     capacitance = 1 / (2 * np.pi * frequency * capacitive_reactance)
+    capacitance = np.mean(capacitance.real.astype(float))  # FIXME: pass to aggregator instead
     return QuantityData(capacitance.to(unit.value))
+
+
+@calcfunction
+def create_liberty_group(cell_name: Str, **capacitances: QuantityData) -> SinglefileData:
+    cell_group = liberty.Group("cell", cell_name.value)
+    for pin, capacitance in capacitances.items():
+        pin_group = liberty.Group("pin", pin)
+        pin_group.add_attribute("capacitance", capacitance.quantity.magnitude)
+        cell_group.add_group(pin_group)
+    with io.BytesIO() as stream:
+        pickle.dump(cell_group, stream)
+        stream.seek(0)  # Reset to start of stream
+        return SinglefileData(file=stream, filename=f"{cell_name.value}_pin_cap_frequency_sweep.lib")

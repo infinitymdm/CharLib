@@ -1,5 +1,6 @@
 import logging
 import re
+from pathlib import Path
 
 from aiida.engine import calcfunction
 from aiida.orm import Data, Dict, List, SinglefileData, Str
@@ -30,7 +31,7 @@ class QuantityData(Data):
         """Reconstruct and return the pint.Quantity object."""
         value = self.base.attributes.get("value")
         units = self.base.attributes.get("units")
-        return value * unit_registry(units)
+        return unit_registry.Quantity(value, units)
 
 
 def voltage_supply(name: str, voltage: float | str, cathode_node: str = "", anode_node: str = "") -> str:
@@ -50,6 +51,16 @@ def resistor(name: str, resistance: float | str, node_1: str, node_2: str) -> st
 def subcircuit(name: str, subcircuit: str, *connections: list[str]) -> str:
     """Construct a string representing a spice subcircuit instantiation"""
     return f"X{name} {' '.join(connections)} {subcircuit}"
+
+
+@calcfunction
+def create_include_statement(path: Str) -> List:
+    return List(list=[f".include {path.value}"])
+
+
+@calcfunction
+def create_lib_statement(path: Str, section: Str | None = None) -> List:
+    return List(list=f".lib {path.value} {section.value}")
 
 
 @calcfunction
@@ -89,10 +100,10 @@ def combine_lists(*args: List):
 
 
 @calcfunction
-def read_pins_in_netlist_order(cell_name: Str, cell_netlist: SinglefileData) -> List:
+def read_pins_in_netlist_order(cell_name: Str, cell_netlist_path: Str) -> List:
     """Read the subckt line for this cell and extract all items after the cell name."""
     subckt_pattern = re.compile(rf"^\s*\.subckt\s+{re.escape(cell_name.value)}\b", re.IGNORECASE)
-    with cell_netlist.open(mode="r") as cell_spice:
+    with open(Path(cell_netlist_path.value), "r") as cell_spice:
         for line in cell_spice:
             if subckt_pattern.match(line):
                 # FIXME: Handle params, pins split across lines, and other edge cases
