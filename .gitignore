@@ -16,3 +16,4 @@ b3v3_1check.log
 *.v
 docs/manual/source/chapters/05_*_yaml_syntax.rst
 .coverage
+*.dot.pdf
