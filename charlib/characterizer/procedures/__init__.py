@@ -1,6 +1,3 @@
-import hashlib
-from pathlib import Path
-
 from aiida.engine import WorkChain
 from aiida.orm import Code, Dict, Float, SinglefileData, Str
 
@@ -21,7 +18,7 @@ class CharacterizationProcedure(WorkChain):
         spec.input_namespace(
             "cell.netlist",
             dynamic=True,
-            validator=validate_files_with_hashes,
+            validator=utils.validate_files_with_hashes,
             help="A netlist containing the subcircuit definition defining the cell's spice model.",
         )
         spec.input("cell.functions", valid_type=Dict, help="Boolean functions for each cell output")
@@ -33,7 +30,7 @@ class CharacterizationProcedure(WorkChain):
             "settings.models",
             dynamic=True,
             required=False,
-            validator=validate_models,
+            validator=utils.validate_models,
             help=(
                 "Device models imported with .lib or .include directives. These are typically PDK-defined transistor "
                 "models used in cell subcircuit definitions."
@@ -104,55 +101,3 @@ class CharacterizationProcedure(WorkChain):
             utils.create_vnwell(named_nodes.nwell.name, named_nodes.nwell.voltage),
         ]
         self.ctx.initial_netlist = utils.combine_lists(*model_imports, cell_import, *supplies)
-
-
-def validate_files_with_hashes(value, port):  # noqa: PLR0911
-    """Validate inputs to namespaces expecting files with accompanying hashes.
-
-    Each valid entry has the following items:
-    - 'path': a valid path Str which points to an extant file
-    - 'hash': a Str which matches the hexadecimal hash of the file at 'path'
-    - 'hash_algorithm': an optional Str specifying hash algorithm used to generate 'hash'. Defaults to sha3_256.
-    """
-    # Check that path exists
-    if "path" not in value:
-        return "Missing required input 'path'."
-    if not isinstance(value["path"], Str):
-        return f"'path' must be of type Str, got {type(value['path']).__name__}."
-    path = Path(value["path"].value).resolve()
-    if not path.is_file():
-        return "'path' does not contain a path to an extant file."
-
-    # Check that hash is correct
-    if "hash" not in value:
-        return "Missing required input 'hash'."
-    if not isinstance(value["hash"], Str):
-        return f"'hash' must be of type Str, got {type(value['hash']).__name__}."
-    if "hash_algorithm" in value:
-        if not isinstance(value["hash_algorithm"], Str):
-            return f"'hash_algorithm' must by of type Str, got {type(value['hash_algorithm']).__name__}."
-        hash_algorithm = value["hash_algorithm"].value
-    else:
-        hash_algorithm = "sha3_256"
-    if hash_algorithm not in hashlib.algorithms_guaranteed:
-        return "'hash_algorithm' must be a hash type which appears in hashlib.algorithms_guaranteed."
-    with open(path, "rb") as f:
-        digest = hashlib.file_digest(f, hash_algorithm)
-    if not value["hash"].value == digest.hexdigest():
-        return f"'hash' does not match {hash_algorithm} digest of file {path!s}."
-
-
-def validate_models(value, port):
-    """Validate inputs to the models namespace.
-
-    Each valid models entry is identical to a netlist entry, with one additional optional parameter:
-    - 'section': an optional Str. If provided, imports use ".lib <path> <section>."; otherwise ".inc <path>".
-    """
-    for label, group in value.items():
-        # If section is present, validate type
-        if "section" in group:
-            if not isinstance(group["section"], Str):
-                return f"'settings.models.{label}.section' must be of type Str, got {type(group['section']).__name}."
-        file_error = validate_files_with_hashes(group, port)
-        if file_error is not None:
-            return file_error
