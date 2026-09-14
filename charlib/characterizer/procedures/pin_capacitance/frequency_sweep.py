@@ -54,12 +54,8 @@ class PinCapacitanceImpedanceDividerProcedure(CharacterizationProcedure):
             help="Shunt resistance applied to all circuit nodes",
         )
 
-        spec.outline(
-            cls.setup_initial_netlist, cls.prepare_simulation_netlists, cls.run_spice_simulations, cls.write_liberty
-        )
-
-    def prepare_simulation_netlists(self):
-        """Construct spice netlists for downstream simulation"""
+    def build_netlists(self):
+        self.setup_initial_netlist()
         ordered_pins = utils.read_pins_in_netlist_order(self.inputs.cell.name, self.inputs.cell.netlist.path)
         named_nodes = self.inputs.settings.named_nodes
         subckt_connections = utils.create_generic_subcircuit_connections(
@@ -79,8 +75,7 @@ class PinCapacitanceImpedanceDividerProcedure(CharacterizationProcedure):
             series_resistance=self.inputs.parameters.in_cap.resistance.series,
         )
 
-    def run_spice_simulations(self):
-        """Run all spice simulations"""
+    def run_simulations(self):
         # Includes, analyses, and options are the same for all netlists, just get these once
         includes = parse_includes(next(iter(self.ctx.netlists.values())))
         analyses = prepare_analyses(
@@ -103,7 +98,6 @@ class PinCapacitanceImpedanceDividerProcedure(CharacterizationProcedure):
             self.to_context(**{key: future})
 
     def write_liberty(self):
-        """Create a liberty cell group with capacitance for each input pin"""
         capacitances = {}
         for pin, sim_node in self.ctx.spice_results.items():
             capacitances[pin] = calculate_capacitance(
@@ -111,7 +105,7 @@ class PinCapacitanceImpedanceDividerProcedure(CharacterizationProcedure):
                 sim_node.outputs.trace_data,
                 self.inputs.settings.units.capacitance,
             )
-        libfile = create_liberty_group(self.inputs.cell.name, **capacitances)
+        libfile = create_liberty_pin_cap_group(self.inputs.cell.name, **capacitances)
         self.out("liberty", libfile)
 
 
@@ -169,7 +163,7 @@ def calculate_capacitance(series_resistance: QuantityData, trace_data: ArrayData
 
 
 @calcfunction
-def create_liberty_group(cell_name: Str, **capacitances: QuantityData) -> SinglefileData:
+def create_liberty_pin_cap_group(cell_name: Str, **capacitances: QuantityData) -> SinglefileData:
     cell_group = liberty.Group("cell", cell_name.value)
     for pin, capacitance in capacitances.items():
         pin_group = liberty.Group("pin", pin)

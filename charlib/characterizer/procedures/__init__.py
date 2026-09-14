@@ -63,7 +63,8 @@ class CharacterizationProcedure(WorkChain):
         spec.input("settings.named_nodes.nwell.name", valid_type=Str)
         spec.input("settings.named_nodes.nwell.voltage", valid_type=QuantityData)
 
-        # Subclasses must define outline
+        # Typical outline for many procedures. Subclasses may define a different outline
+        spec.outline(cls.build_netlists, cls.run_simulations, cls.write_liberty)
 
         # Output a pickled liberty cell group
         spec.output(
@@ -101,3 +102,15 @@ class CharacterizationProcedure(WorkChain):
             utils.create_vnwell(named_nodes.nwell.name, named_nodes.nwell.voltage),
         ]
         self.ctx.initial_netlist = utils.combine_lists(*model_imports, cell_import, *supplies)
+
+    def build_netlists(self):
+        """Construct spice netlists (as SinglefileData entries) for later simulation"""
+        raise NotImplementedError(f"{self.__class__.__name__} must implement `build_netlists`")
+
+    def run_simulations(self):
+        """Run spice simulations using prepared netlists"""
+        raise NotImplementedError(f"{self.__class__.__name__} must implement `run_simulations`")
+
+    def write_liberty(self):
+        """Use simulation results to build cell liberty groups"""
+        raise NotImplementedError(f"{self.__class__.__name__} must implement `write_liberty`")
