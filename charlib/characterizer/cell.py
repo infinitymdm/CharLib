@@ -1,20 +1,20 @@
 """Encapsulates a cell to be tested."""
 
-import itertools, re
+import itertools
+import re
 from pathlib import Path
-
-from charlib.characterizer.procedures import registered_procedures
 
 from charlib.characterizer.logic.evaluators import OPERAND_REGEX
 from charlib.characterizer.logic.functions import Function
-from charlib.characterizer.port import Port, Pin, DifferentialPair
 from charlib.characterizer.logic.Parser import parse_logic
+from charlib.characterizer.port import DifferentialPair, Pin, Port
 from charlib.liberty import liberty
+
 
 class Cell:
     """A standard cell and its functional details"""
 
-    def __init__(self, name: str, supply_nodes: dict,  **cell_config):
+    def __init__(self, name: str, supply_nodes: dict, **cell_config):
         """Construct a new cell from the given configuration
 
         :param name: The cell name as it appears in the spice netlist.
@@ -24,6 +24,7 @@ class Cell:
         The cell initialization process is as follows:
         1. Process cell_config to get the following information about the cell:
             - The path to the cell's netlist.
+            - The cell's transistor models.
             - Functions implemented in this cell (and optionally input and output pin names).
             - Which pins have special roles or are members of differential pairs.
             - The functions of any internal state elements and/or feedback paths.
@@ -38,6 +39,7 @@ class Cell:
         4. Construct a skeleton liberty object for this cell.
         """
         self.name = name
+        self.models = []
         self.pins = {}
         self.diff_pairs = {}
         self.functions = {}
@@ -45,39 +47,52 @@ class Cell:
         ## 1. Process cell_config
 
         # Validate netlist
-        netlist = cell_config['netlist']
+        netlist = cell_config["netlist"]
         if isinstance(netlist, str):
             # Check for ~ and expand if present
-            netlist = Path(netlist).expanduser() if '~' in netlist else Path(netlist)
+            netlist = Path(netlist).expanduser() if "~" in netlist else Path(netlist)
         if isinstance(netlist, Path):
             if not netlist.is_file():
                 raise ValueError(f'Invalid value for netlist: "{netlist}" is not a file')
             self.netlist = Path(netlist)
         else:
-            raise TypeError(f'Invalid type for netlist: {type(netlist)}')
+            raise TypeError(f"Invalid type for netlist: {type(netlist)}")
+
+        # Validate models
+        for model in cell_config["models"]:
+            # Split to path and (optional) section, then validate both
+            filename, *libname = model.split()
+            filename = Path(filename).expanduser() if "~" in filename else Path(filename)
+            if not filename.exists():
+                raise ValueError(f'Unable to locate model at "{filename}"')
+            if len(libname) > 1:
+                raise ValueError(f'Expected 1 libname in model "{model}", got {len(libname)}:{libname}')
+            elif not len(libname) == 1:
+                libname = []
+            self.models.append((filename, *libname))
 
         # Map supplies and special pins to (trigger, inverted, role) tuples
         special_pins = {p.upper(): (Port.Trigger.LEVEL, False, role) for p, role in supply_nodes.items()}
-        for role in ['clock', 'set', 'reset', 'enable']:
+        for role in ["clock", "set", "reset", "enable"]:
             if role in cell_config:
-                match cell_config[role].replace('!', 'not ').split():
-                    case ['posedge', pin]:
+                match cell_config[role].replace("!", "not ").split():
+                    case ["posedge", pin]:
                         special_pins[pin.upper()] = (Port.Trigger.EDGE, False, role)
-                    case ['negedge', pin]:
+                    case ["negedge", pin]:
                         special_pins[pin.upper()] = (Port.Trigger.EDGE, True, role)
-                    case ['not', pin]:
+                    case ["not", pin]:
                         special_pins[pin.upper()] = (Port.Trigger.LEVEL, True, role)
                     case [pin]:
                         special_pins[pin.upper()] = (Port.Trigger.LEVEL, False, role)
 
         # Identify diff pairs
-        diff_pairs = [tuple(pair.split()) for pair in cell_config.get('pairs', [])]
+        diff_pairs = [tuple(pair.split()) for pair in cell_config.get("pairs", [])]
 
         # Parse functions to determine input and output mapping
         def _parse_expression(expression):
             # Helper function for parsing expressions of the form Y=A&B etc.
-            lhs, rhs = expression.split('=')
-            output = ''.join([c for c in lhs if c.isalnum() or c == '_'])
+            lhs, rhs = expression.split("=")
+            output = "".join([c for c in lhs if c.isalnum() or c == "_"])
             if not parse_logic(rhs):
                 raise ValueError(f'Could not parse expression "{expression}"')
             return output, rhs.strip()
@@ -87,16 +102,16 @@ class Cell:
         inputs = set()
         outputs = set()
         parsed_states = {}
-        if 'state' in cell_config:
-            for state in cell_config['state']:
+        if "state" in cell_config:
+            for state in cell_config["state"]:
                 internal_pin, state_expr = _parse_expression(state)
                 parsed_states[internal_pin] = state_expr
-        for function in cell_config['functions']:
+        for function in cell_config["functions"]:
             output, func_expr = _parse_expression(function)
             if func_expr in parsed_states:
                 # TODO: if output not in states, indicate problem with cell config
-                states[output] = func_expr # Store internal mapping
-                func_expr = parsed_states[func_expr] # Read through function
+                states[output] = func_expr  # Store internal mapping
+                func_expr = parsed_states[func_expr]  # Read through function
             functions[output] = func_expr
             inputs.update(set(OPERAND_REGEX.findall(func_expr)))
             outputs.add(output)
@@ -106,9 +121,12 @@ class Cell:
         # Helper function for direction matching with minimal membership checking
         def match_direction(pin_name):
             match (pin_name in inputs, pin_name in outputs):
-                case True, True:  return 'inout'
-                case False, True: return 'output'
-                case True, False: return 'input'
+                case True, True:
+                    return "inout"
+                case False, True:
+                    return "output"
+                case True, False:
+                    return "input"
             raise ValueError(f'Unable to determine direction for pin "{pin_name}"')
 
         # Get pin names from subckt and iterate until there are no unassigned pins remaining
@@ -118,28 +136,27 @@ class Cell:
             if pin in special_pins:
                 # This pin has a special (i.e. non-logic) role
                 trigger_type, inverted, role = special_pins[pin]
-                self.pins[pin] = Pin(pin, 'input', role, inverted, trigger_type)
+                self.pins[pin] = Pin(pin, "input", role, inverted, trigger_type)
             elif any([pin in pair for pair in diff_pairs]):
                 # This pin is a member of a differential pair; find and build the pair
                 [pair] = [p for p in diff_pairs if pin in p]
                 (noninv_pin, inv_pin) = pair
                 self.diff_pairs[pair] = DifferentialPair(noninv_pin, inv_pin, match_direction(pin))
-                unassigned_pins.remove(pair[pair.index(pin)-1])
+                unassigned_pins.remove(pair[pair.index(pin) - 1])
             else:
                 # This is a standard logic pin
                 self.pins[pin] = Pin(pin, match_direction(pin))
 
         # Validate pin names if 'inputs' and/or 'outputs' keys are in cell_config
-        if 'inputs' in cell_config:
-            if not set(cell_config['inputs']) <= set(self.inputs):
-                raise ValueError(f'Expected inputs {cell_config["inputs"]}, found {self.inputs}')
-        if 'outputs' in cell_config:
-            if not set(cell_config['outputs']) <= set(self.outputs):
-                raise ValueError(f'Expected outputs {cell_config["outputs"]}, found {self.outputs}')
+        if "inputs" in cell_config:
+            if not set(cell_config["inputs"]) <= set(self.inputs):
+                raise ValueError(f"Expected inputs {cell_config['inputs']}, found {self.inputs}")
+        if "outputs" in cell_config:
+            if not set(cell_config["outputs"]) <= set(self.outputs):
+                raise ValueError(f"Expected outputs {cell_config['outputs']}, found {self.outputs}")
 
         ## 3. Construct functions based on pin types & feedback paths
         for output, expression in functions.items():
-            is_inverting = output in [pair.inverting_port_name for pair in self.diff_pairs.values()]
             state = states.get(output)
             # TODO: Pass only pins which are related to this function
             # TODO: Handle multiple clocks, etc.
@@ -147,60 +164,64 @@ class Cell:
             self.functions[output] = Function(output_pin, expression, *self.all_pins(), state=state)
 
         ## 4. Add as much liberty data as we can right now
-        self.liberty = liberty.Group('cell', name)
-        self.liberty.add_attribute('area', cell_config.get('area', 0.0), 2)
+        self.liberty = liberty.Group("cell", name)
+        self.liberty.add_attribute("area", cell_config.get("area", 0.0), 2)
+
         def to_lib_expr(pin):
             return pin.name + "'" if pin.is_inverted() else pin.name
+
         inverting_pins = {pair.inverting_port_name for pair in self.diff_pairs.values()}
-        for pin, var in states.items(): # Add storage groups
+        for pin, var in states.items():  # Add storage groups
             # Get variable names
             if pin in inverting_pins:
-                continue # skip inverting pins
+                continue  # skip inverting pins
             storage_vars = [var]
             for pair in self.diff_pairs.values():
                 if pin == pair.noninverting_port_name:
                     try:
                         complement_var = states[pair.complement(pin)]
                     except KeyError as e:
-                        raise ValueError(f'No state feedback path for differential pair member {pair.complement(pin)}') from e
+                        raise ValueError(
+                            f"No state feedback path for differential pair member {pair.complement(pin)}"
+                        ) from e
                     storage_vars.append(complement_var)
                     break
             if len(storage_vars) < 2:
                 # No inverting output. Append inv to the end of the first var name
-                storage_vars.append(f'{var}inv')
-            var_string = ', '.join(storage_vars)
-            if self.clock: # ff group
-                storage_group = liberty.Group('ff', var_string)
-                storage_group.add_attribute('next_state', self.functions[pin].expression)
-                storage_group.add_attribute('clocked_on', to_lib_expr(self.clock))
-            else: # latch group
-                storage_group = liberty.Group('latch', var_string)
-                storage_group.add_attribute('data_in', self.functions[pin].expression)
+                storage_vars.append(f"{var}inv")
+            var_string = ", ".join(storage_vars)
+            if self.clock:  # ff group
+                storage_group = liberty.Group("ff", var_string)
+                storage_group.add_attribute("next_state", self.functions[pin].expression)
+                storage_group.add_attribute("clocked_on", to_lib_expr(self.clock))
+            else:  # latch group
+                storage_group = liberty.Group("latch", var_string)
+                storage_group.add_attribute("data_in", self.functions[pin].expression)
                 if self.enable:
-                    storage_group.add_attribute('enable', to_lib_expr(self.enable))
+                    storage_group.add_attribute("enable", to_lib_expr(self.enable))
             if self.clear:
-                storage_group.add_attribute('clear', to_lib_expr(self.clear))
+                storage_group.add_attribute("clear", to_lib_expr(self.clear))
             if self.preset:
-                storage_group.add_attribute('preset', to_lib_expr(self.preset))
+                storage_group.add_attribute("preset", to_lib_expr(self.preset))
             self.liberty.add_group(storage_group)
-        for pin in self.all_pins(): # Add pin groups
+        for pin in self.all_pins():  # Add pin groups
             if pin.name in self.pg_pins:
-                pin_group = liberty.Group('pg_pin', pin.name)
-                pin_group.add_attribute('voltage_name', pin.name)
-                pin_group.add_attribute('pg_type', pin.role)
+                pin_group = liberty.Group("pg_pin", pin.name)
+                pin_group.add_attribute("voltage_name", pin.name)
+                pin_group.add_attribute("pg_type", pin.role)
             else:
-                pin_group = liberty.Group('pin', pin.name)
-                pin_group.add_attribute('direction', pin.direction)
+                pin_group = liberty.Group("pin", pin.name)
+                pin_group.add_attribute("direction", pin.direction)
                 if pin.direction is Port.Direction.OUT:
-                    pin_group.add_attribute('function', str(self.functions[pin.name]))
+                    pin_group.add_attribute("function", str(self.functions[pin.name]))
                 elif pin.role == Port.Role.CLOCK:
-                    pin_group.add_attribute('clock', "true")
+                    pin_group.add_attribute("clock", "true")
             self.liberty.add_group(pin_group)
 
     def subckt(self) -> str:
         """Return the subckt line matching this cell"""
-        subckt_pattern = re.compile(rf'^\s*\.subckt\s+{re.escape(self.name)}\b', re.IGNORECASE)
-        with open(self.netlist, 'r') as file:
+        subckt_pattern = re.compile(rf"^\s*\.subckt\s+{re.escape(self.name)}\b", re.IGNORECASE)
+        with open(self.netlist, "r") as file:
             for line in file:
                 if subckt_pattern.match(line):
                     return line.upper()
@@ -224,31 +245,38 @@ class Cell:
         :param attrs: Attributes (and values) to match for. Each argument may be a single value
                       or a list of values.
         """
-        list_attrs = {a: v if isinstance(v, list) else [v,] for a, v in attrs.items()}
+        list_attrs = {
+            a: v
+            if isinstance(v, list)
+            else [
+                v,
+            ]
+            for a, v in attrs.items()
+        }
         for pin in self.all_pins():
             if any([getattr(pin, attr) not in value for attr, value in list_attrs.items()]):
-                continue # skip if any attribute doesn't match
+                continue  # skip if any attribute doesn't match
             yield pin
 
     @property
     def outputs(self) -> list:
         """Return a list of output logic pin names"""
-        return [pin.name for pin in self.filter_pins(direction='output', role='logic')]
+        return [pin.name for pin in self.filter_pins(direction="output", role="logic")]
 
     @property
     def inputs(self) -> list:
         """Return a list of input logic pin names"""
-        return [pin.name for pin in self.filter_pins(direction='input', role='logic')]
+        return [pin.name for pin in self.filter_pins(direction="input", role="logic")]
 
     @property
     def inouts(self) -> list:
         """Return a list of inout logic pin names"""
-        return [pin.name for pin in self.filter_pins(direction='inout', role='logic')]
+        return [pin.name for pin in self.filter_pins(direction="inout", role="logic")]
 
     @property
     def pg_pins(self) -> list:
         """Return a list of supply and bias pin names"""
-        return [pin.name for pin in self.filter_pins(role=['primary_power', 'primary_ground', 'pwell', 'nwell'])]
+        return [pin.name for pin in self.filter_pins(role=["primary_power", "primary_ground", "pwell", "nwell"])]
 
     def _get_first_pin_with_role(self, role):
         """Return the first pin with the specified role. If there is no such pin, return None."""
@@ -260,22 +288,22 @@ class Cell:
     @property
     def enable(self):
         """Return the cell's enable pin, if present"""
-        return self._get_first_pin_with_role('enable')
+        return self._get_first_pin_with_role("enable")
 
     @property
     def clock(self):
         """Return the cell's clock pin, if present"""
-        return self._get_first_pin_with_role('clock')
+        return self._get_first_pin_with_role("clock")
 
     @property
     def preset(self):
         """Return the cell's set pin, if present"""
-        return self._get_first_pin_with_role('set')
+        return self._get_first_pin_with_role("set")
 
     @property
     def clear(self):
         """Return the cell's reset pin, if present"""
-        return self._get_first_pin_with_role('reset')
+        return self._get_first_pin_with_role("reset")
 
     def paths(self):
         """Generator for input-to-output paths through a cell
@@ -285,12 +313,11 @@ class Cell:
         they are possible given this cell's functions.
         """
         # FIXME: Generate only paths which actually make sense given this cell's function
-        transitions = ['01', '10']
+        transitions = ["01", "10"]
         for path in itertools.product(self.inputs, transitions, self.outputs, transitions):
             yield path
 
-    def nonmasking_conditions_for_path(self, input_pin, input_transition, output_pin,
-                                       output_transition):
+    def nonmasking_conditions_for_path(self, input_pin, input_transition, output_pin, output_transition):
         """Find all mappings of pin states such that the desired state transitions occur.
 
         Returns a generator yielding dictionaries of states for which input_pin and output_pin
@@ -310,57 +337,3 @@ class Cell:
     @property
     def is_sequential(self) -> bool:
         return any([f.state is not None for f in self.functions.values()])
-
-
-class CellTestConfig:
-    """Capture configuration information for testing one or more cells"""
-
-    def __init__(self, models: list, plots=[], timestep=None, **parameters):
-        """Construct a new test configuration.
-
-        :param models: Transistor models for the cell under test
-        :param plots: A list of plot types to generate from simulation results. Defaults to None.
-        :param timestep: The simulation timestep to use for transient simulations, specified in
-                         settings.units.time units. Defaults to 1/8 the minimum data_slew or
-                         clock_slew if not provided.
-        :param **parameters: Keyword arguments containing lists of test parameters, as described
-                             below:
-            :param data_slews: A list of input data slew rates to test, specified in
-                               settings.units.time units.
-            :param clock_slews: A list of clock slew rates to test specified in settings.units.time
-                               units
-            :param loads: A list of output load capacitances to test, specified in
-                          settings.units.capacitance units
-        """
-        self.models = list()
-        for model in models:
-            # Split to path and (optional) section, then validate both
-            filename, *libname = model.split()
-            filename = Path(filename).expanduser() if '~' in filename else Path(filename)
-            if not filename.exists():
-                raise ValueError(f'Unable to locate model at "{filename}"')
-            if len(libname) > 1:
-                raise ValueError(f'Expected 1 libname in model "{model}", got {len(libname)}:' \
-                                 f'{libname}')
-            elif not len(libname) == 1:
-                libname = []
-            self.models.append((filename, *libname))
-
-        self.timestep = timestep
-        self.plots = plots
-        supported_parameters = {param for rp in registered_procedures.values() for param in rp['parameters']}
-        self.parameters = {k: parameters[k] for k in supported_parameters if k in parameters}
-
-    def variations(self, *keys):
-        """Generator for test configuration variations
-
-        Yields dictionaries containing key-value pairs for a single combination of parameters. For
-        example: {data_slews: 0.01, loads: 0.025}
-
-        :param *keys: If provided, only return variations of provided parameter names.
-        """
-        parameters = self.parameters if not keys else {k: self.parameters[k] for k in keys}
-        param_names, values = zip(*parameters.items())
-        values = [v if isinstance(v, list) else [v] for v in values]
-        for combination in itertools.product(*values):
-            yield dict(zip(param_names, combination))
