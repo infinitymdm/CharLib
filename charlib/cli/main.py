@@ -16,7 +16,8 @@ def main():
 
     # Set up run subcommand
     # Other subcommands may be added in the future
-    subparser = parser.add_subparsers(title="subcomamands", required=True)
+    # TODO: Add config subcommand for checking and building configs
+    subparser = parser.add_subparsers(title="subcommands", required=True)
     parser_characterize = subparser.add_parser("run", help="Characterize a standard cell library")
 
     # Set up charlib run arguments
