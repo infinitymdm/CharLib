@@ -1,5 +1,4 @@
 import io
-import logging
 import pickle
 
 import numpy as np
@@ -12,8 +11,6 @@ from charlib.characterizer.characterizer import unit_registry
 from charlib.characterizer.port import Role
 from charlib.characterizer.procedures import CharacterizationProcedure, utils
 from charlib.characterizer.procedures.utils import QuantityData
-
-logger = logging.getLogger(__name__)
 
 
 class PinCapacitanceImpedanceDividerProcedure(CharacterizationProcedure):
