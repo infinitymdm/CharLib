@@ -15,5 +15,3 @@ b3v3_1check.log
 *.txt
 *.v
 docs/manual/source/chapters/05_*_yaml_syntax.rst
-gf180mcu/
-osu350/

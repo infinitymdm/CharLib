@@ -1,7 +1,7 @@
 settings:
     lib_name: OSU350
     units:
-        pulling_resistance: kOhm
+        pulling_resistance: kiloohm
     named_nodes:
         primary_ground:
             name: GND
