@@ -1,8 +1,11 @@
-import re, yaml
+import re
 from pathlib import Path
 
-from charlib.config.syntax import ConfigFile
+import yaml
 from schema import SchemaError
+
+from charlib.config.syntax import ConfigFile
+
 
 def find_yaml_files(path) -> list:
     """Return a list of Paths containing all YAML files in the directory specified by `path`."""
@@ -10,7 +13,7 @@ def find_yaml_files(path) -> list:
     if path.is_file():
         return [path]
     elif path.is_dir():
-        return list(path.rglob('*.yaml')) + list(path.rglob('*.yml'))
+        return list(path.rglob("*.yaml")) + list(path.rglob("*.yml"))
     else:
         return []
 
@@ -18,11 +21,11 @@ def find_yaml_files(path) -> list:
 def resolve_subkey(value, base_dir):
     """If a config value ends in .yml or .yaml, resolve it to the YAML contents."""
     if isinstance(value, str):
-        if not value.lower().endswith(('.yml', '.yaml')):
+        if not value.lower().endswith((".yml", ".yaml")):
             return value
         possible_yamls = find_yaml_files(Path(base_dir) / value)
         if len(possible_yamls) != 1:
-            raise ValueError(f'Unable to resolve {value} to a unique existing file')
+            raise ValueError(f"Unable to resolve {value} to a unique existing file")
         with open(possible_yamls[0]) as file:
             return yaml.safe_load(file)
     return value
@@ -32,7 +35,7 @@ def find_config(config_path, quiet=True):
     """Find an appropriately-formatted YAML file in `config_path`"""
 
     if not quiet:
-        print(f'Searching for YAML files at {str(config_path)}')
+        print(f"Searching for YAML files at {config_path!s}")
     config = None
     errors = []
     for file in find_yaml_files(config_path):
@@ -41,31 +44,31 @@ def find_config(config_path, quiet=True):
             with open(file) as f:
                 config = yaml.safe_load(f)
         except yaml.YAMLError as e:
-            errors.append(f'{file}: invalid YAML: {e}')
+            errors.append(f"{file}: invalid YAML: {e}")
             if not quiet:
                 print(e)
-                print(f'Skipping "{str(file)}": file contains invalid YAML')
+                print(f'Skipping "{file!s}": file contains invalid YAML')
             continue
         # Ensure the file contains a config dictionary
         if not isinstance(config, dict):
-            errors.append(f'{file}: expected a configuration mapping')
+            errors.append(f"{file}: expected a configuration mapping")
             if not quiet:
-                print(f'Skipping "{str(file)}": file does not contain a config dict')
+                print(f'Skipping "{file!s}": file does not contain a config dict')
             continue
         # Substitute in config keys which point to other YAML files or directories
         config = {k: resolve_subkey(v, file.parent) for k, v in config.items()}
         # Validate the schema
         try:
             config = ConfigFile.validate(config)
-            break # Exit on success
+            break  # Exit on success
         except SchemaError as e:
-            errors.append(f'{file}: {e}')
+            errors.append(f"{file}: {e}")
             if not quiet:
-                print(f'Skipping "{str(file)}": {e}')
+                print(f'Skipping "{file!s}": {e}')
             config = None
     if not isinstance(config, dict):
-        details = '\n' + '\n'.join(errors) if errors else ''
-        raise FileNotFoundError(f'No valid configuration found in {config_path}{details}')
+        details = "\n" + "\n".join(errors) if errors else ""
+        raise FileNotFoundError(f"No valid configuration found in {config_path}{details}")
     return config
 
 
@@ -73,11 +76,11 @@ def filter_cells(cells: dict, filters: list) -> dict:
     """Filter the dict of cells by name against a list of regex filter patterns."""
     filtered_cells = {}
     filters = [re.compile(f) for f in filters]
-    for name in cells: # Check each cell name against each filter pattern until we get a match
+    for name in cells:  # Check each cell name against each filter pattern until we get a match
         for pattern in filters:
             if pattern.search(name):
                 filtered_cells[name] = cells[name]
-                break # We've already matched this cell, quit searching
+                break  # We've already matched this cell, quit searching
     return filtered_cells
 
 
@@ -92,12 +95,16 @@ def read_cell_configs(cells):
             # Search the directory for valid YAML
             for file in find_yaml_files(properties):
                 try:
-                    with open(file, 'r') as f:
+                    with open(file, "r") as f:
                         properties = yaml.safe_load(f)
-                    break # Quit searching after successfully reading a match
+                    break  # Quit searching after successfully reading a match
                 except yaml.YAMLError as e:
                     if not quiet:
                         print(e)
-                        print(f'Skipping "{str(file)}": file contains invalid YAML')
+                        print(f'Skipping "{file!s}": file contains invalid YAML')
                     continue
-        yield (name, properties)
+        elif isinstance(properties, dict):
+            cell_config = properties
+        else:
+            raise TypeError(f'Config for cell "{name}" must be of type str or dict, got {type(properties).__name__}')
+        yield (name, cell_config)
