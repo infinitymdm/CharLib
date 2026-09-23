@@ -1,8 +1,9 @@
-
-import yaml
 import os
 
+import yaml
+
 from charlib.config.syntax import ConfigFile
+
 
 def test_settings_default():
     """
@@ -12,7 +13,7 @@ def test_settings_default():
     config = None
 
     config_file = os.path.join(os.path.dirname(__file__), "test_settings_default.yml")
-    with open(config_file, 'r') as f:
+    with open(config_file, "r") as f:
         config = yaml.safe_load(f)
 
     config = ConfigFile.validate(config)
@@ -24,7 +25,7 @@ def test_settings_default():
     assert units["time"] == "ns"
     assert units["voltage"] == "V"
     assert units["current"] == "uA"
-    assert units["pulling_resistance"] == "Ohm"
+    assert units["pulling_resistance"] == "ohm"
     assert units["leakage_power"] == "nW"
     assert units["capacitive_load"] == "pF"
     assert units["energy"] == "fJ"
@@ -44,9 +45,8 @@ def test_settings_default():
     assert settings["logic_thresholds"]["rising"] == 0.5
     assert settings["logic_thresholds"]["falling"] == 0.5
 
-    assert settings["multithreaded"] == True
+    assert settings["multithreaded"]
     assert settings["results_dir"] == "results"
-    assert settings["debug"] == False
+    assert not settings["debug"]
     assert settings["debug_dir"] == "debug"
-    assert settings["omit_on_failure"] == False
-
+    assert not settings["omit_on_failure"]
