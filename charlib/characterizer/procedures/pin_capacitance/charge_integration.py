@@ -3,7 +3,7 @@ import pickle
 
 from aiida.engine import calcfunction
 from aiida.orm import Dict, List, SinglefileData, Str
-from aiida_spice.utils import parse_includes
+from aiida_spice.calculations import parse_includes
 
 from charlib import liberty
 from charlib.characterizer.characterizer import unit_registry
@@ -74,7 +74,9 @@ class PinCapacitanceChargeIntegrationProcedure(CharacterizationProcedure):
     def run_simulations(self):
         includes = parse_includes(next(iter(self.ctx.netlists.values())))
         analyses = prepare_analyses(self.inputs.parameters.in_cap.time.slew)
-        options = prepare_options(self.inputs.simulation.temperature, self.inputs.parameters.in_cap.resistance.shunt)
+        options = prepare_options(
+            self.inputs.settings.simulation.temperature, self.inputs.parameters.in_cap.resistance.shunt
+        )
 
         for pin_direction, netlist in self.ctx.netlists.items():
             builder = self.inputs.settings.simulation.engine.get_builder()
@@ -89,17 +91,13 @@ class PinCapacitanceChargeIntegrationProcedure(CharacterizationProcedure):
 
     def write_liberty(self):
         capacitances = {}
-        for pin, sim_node in self.ctx.spice_results.items():
-            capacitances[pin + ".rise"] = calculate_capacitance(
-                sim_node.rise.outputs.measurements,
+        for pin_direction, sim_node in self.ctx.spice_results.items():
+            capacitances[pin_direction] = calculate_capacitance(
+                sim_node.outputs.measurements,
                 self.inputs.parameters.in_cap.voltage.max,
                 self.inputs.settings.units.capacitance,
             )
-            capacitances[pin + ".fall"] = calculate_capacitance(
-                sim_node.fall.outputs.measurements,
-                self.inputs.parameters.in_cap.voltage.max,
-                self.inputs.settings.units.capacitance,
-            )
+            # TODO: Add average capacitance using an aggregator
         libfile = create_liberty_pin_cap_group(self.inputs.cell.name, **capacitances)
         self.out("liberty", libfile)
 
@@ -119,8 +117,8 @@ def create_stimulus_netlists(
         for direction, (v0, v1) in {"rise": (vmin, vmax), "fall": (vmax, vmin)}.items():
             netlist = [f".title {target_pin} input capacitance voltage ramp ({direction})"]
             netlist.extend(netlist_header.get_list())
-            netlist.append(utils.voltage_supply("stimulus", f"PWL(0 {v0} {tslew} {v1})"), target_pin)
-            netlists[target_pin + "." + direction] = SinglefileData.from_string(
+            netlist.append(utils.voltage_supply("stimulus", f"PWL(0 {v0} {tslew} {v1})", target_pin))
+            netlists[target_pin + "_" + direction] = SinglefileData.from_string(
                 "\n".join(netlist), filename=f"netlist_{target_pin}_{direction}.spice"
             )
     return netlists
@@ -131,7 +129,7 @@ def prepare_analyses(slew_time: QuantityData) -> List:
     tslew = slew_time.quantity.to("seconds").magnitude
     return List(
         list=[
-            f".tran 0 {tslew}",
+            f".tran {tslew / 100} {tslew}",  # FIXME: parameterize number of points
             f".meas tran qtest INTEG i(vstimulus) from=0 to={tslew}",
         ]
     )
@@ -151,7 +149,7 @@ def prepare_options(temperature: QuantityData, shunt_resistance: QuantityData) -
 def calculate_capacitance(measurements: Dict, max_voltage: QuantityData, unit: Str) -> QuantityData:
     vmax = max_voltage.quantity
     qtest = measurements.get_dict().get("qtest", float("nan")) * unit_registry("coulombs")
-    capacitance = qtest / vmax
+    capacitance = abs(qtest) / vmax
     return QuantityData(capacitance.to(unit.value))
 
 
@@ -159,7 +157,7 @@ def calculate_capacitance(measurements: Dict, max_voltage: QuantityData, unit: S
 def create_liberty_pin_cap_group(cell_name: Str, **capacitances: QuantityData) -> SinglefileData:
     cell_group = liberty.Group("cell", cell_name.value)
     for pin_direction, capacitance in capacitances.items():
-        pin, direction = pin_direction.split(".")
+        pin, direction = pin_direction.split("_")
         pin_group = liberty.Group("pin", pin)
         pin_group.add_attribute(f"{direction}_capacitance", capacitance.quantity.magnitude)
         cell_group.add_group(pin_group)

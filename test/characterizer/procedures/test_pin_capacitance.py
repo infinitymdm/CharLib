@@ -8,12 +8,12 @@ from aiida.orm import Dict, Str, load_code
 
 from charlib.characterizer.characterizer import unit_registry
 from charlib.characterizer.port import Direction, Role, Trigger
+from charlib.characterizer.procedures.pin_capacitance.charge_integration import PinCapacitanceChargeIntegrationProcedure
 from charlib.characterizer.procedures.pin_capacitance.frequency_sweep import PinCapacitanceImpedanceDividerProcedure
 from charlib.characterizer.procedures.utils import QuantityData
 
 
-def test_pin_cap_impedance_divider():
-    """Test the PinCapacitanceImpedanceDividerProcedure workchain with a known-capacitance example"""
+def _make_inputs():
     load_profile()
     spice_code = load_code(label="ngspice@localhost")
     cell_path = Path.cwd() / "test/characterizer/procedures/rc_circuit.spice"
@@ -92,17 +92,23 @@ def test_pin_cap_impedance_divider():
                 },
             },
         },
-        "parameters": {
-            "in_cap": {
-                "frequency": {
-                    "min": QuantityData(1e4 * unit_registry.Hz),
-                    "max": QuantityData(1e9 * unit_registry.Hz),
-                },
-                "voltage": QuantityData(2 * unit_registry.volt),
-                "resistance": {
-                    "series": QuantityData(1e3 * unit_registry.ohm),
-                    "shunt": QuantityData(1e10 * unit_registry.ohm),
-                },
+    }
+    return inputs
+
+
+def test_pin_cap_impedance_divider():
+    """Test the PinCapacitanceImpedanceDividerProcedure workchain with a known-capacitance example"""
+    inputs = _make_inputs()
+    inputs["parameters"] = {
+        "in_cap": {
+            "frequency": {
+                "min": QuantityData(1e4 * unit_registry.Hz),
+                "max": QuantityData(1e9 * unit_registry.Hz),
+            },
+            "voltage": QuantityData(2 * unit_registry.volt),
+            "resistance": {
+                "series": QuantityData(1e3 * unit_registry.ohm),
+                "shunt": QuantityData(1e10 * unit_registry.ohm),
             },
         },
     }
@@ -117,3 +123,35 @@ def test_pin_cap_impedance_divider():
     assert cell_group is not None
 
     assert abs(cell_group.group("pin", "IN").attributes["capacitance"].value - 100) < 1e-6
+
+
+def test_pin_cap_charge_integration():
+    """Test the PinCapacitanceChargeIntegrationProcedure workchain with a known-capacitance example"""
+
+    inputs = _make_inputs()
+    inputs["parameters"] = {
+        "in_cap": {
+            "resistance": {
+                "shunt": QuantityData(1e10 * unit_registry.ohm),
+            },
+            "time": {
+                "slew": QuantityData(10 * unit_registry.nanosecond),
+            },
+            "voltage": {
+                "min": QuantityData(0 * unit_registry.volt),
+                "max": QuantityData(3 * unit_registry.volt),
+            },
+        }
+    }
+
+    results = run(PinCapacitanceChargeIntegrationProcedure, **inputs)
+    assert results["liberty"] is not None
+
+    with results["liberty"].open(mode="rb") as stream:
+        cell_group = pickle.load(stream)
+
+    print(cell_group.to_liberty(precision=6))
+    assert cell_group is not None
+
+    assert abs(cell_group.group("pin", "IN").attributes["rise_capacitance"].value - 100) < 1e-2
+    assert abs(cell_group.group("pin", "IN").attributes["fall_capacitance"].value - 100) < 1e-2
