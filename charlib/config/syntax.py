@@ -219,7 +219,7 @@ class ConfigFile:
             ): int,
             Optional(
                 Literal(
-                    "delay_growth_threshold",
+                    "metastability_constraint_growth_threshold",
                     description="Maximum fractional increase over the reference clock-to-Q delay "
                     "accepted during setup/hold constraint search. For example, 0.2 "
                     "allows 20% delay growth. Defaults to 0.2.",
