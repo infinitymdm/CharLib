@@ -24,6 +24,14 @@ class PinCapacitanceChargeIntegrationProcedure(CharacterizationProcedure):
     """
 
     @classmethod
+    def get_aliases(cls) -> list:
+        return [
+            cls.__class__.__name__,
+            cls.__class__.__name__.lower(),
+            "charge_integration",
+        ]
+
+    @classmethod
     def define(cls, spec):
         super().define(spec)
 
@@ -97,7 +105,7 @@ class PinCapacitanceChargeIntegrationProcedure(CharacterizationProcedure):
                 self.inputs.parameters.in_cap.voltage.max,
                 self.inputs.settings.units.capacitance,
             )
-            # TODO: Add average capacitance using an aggregator
+        # TODO: Add average capacitance using an aggregator
         libfile = create_liberty_pin_cap_group(self.inputs.cell.name, **capacitances)
         self.out("liberty", libfile)
 

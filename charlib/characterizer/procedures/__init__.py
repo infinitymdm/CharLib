@@ -9,6 +9,11 @@ class CharacterizationProcedure(WorkChain):
     """Abstract base class for all characterization Procedures"""
 
     @classmethod
+    def get_aliases(cls) -> list:
+        """Return a list of identifiers for procedure lookup"""
+        raise NotImplementedError(f"{cls.__class__.__name__} must implement `get_aliases`")
+
+    @classmethod
     def define(cls, spec):
         """Specify common inputs and outputs. Subclasses will likely define additional I/O."""
         super().define(spec)

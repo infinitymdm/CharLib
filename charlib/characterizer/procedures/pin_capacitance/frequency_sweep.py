@@ -21,6 +21,16 @@ class PinCapacitanceImpedanceDividerProcedure(CharacterizationProcedure):
     """
 
     @classmethod
+    def get_aliases(cls) -> list:
+        return [
+            cls.__class__.__name__,
+            cls.__class__.__name__.lower(),
+            "ac_sweep",
+            "frequency_sweep",
+            "impedance_divider",
+        ]
+
+    @classmethod
     def define(cls, spec):
         super().define(spec)
 
